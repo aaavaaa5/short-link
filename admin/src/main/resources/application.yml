@@ -1,0 +1,55 @@
+server:
+  port: 8081
+spring:
+  application:
+    name:  shortlink-admin
+  cloud:
+    nacos:
+      discovery:
+        server-addr: 127.0.0.1:8848
+        namespace: shortlink
+      config:
+        server-addr: 127.0.0.1:8848
+        namespace: shortlink
+  shardingsphere:
+    datasource:
+      names: ds0, ds1
+      ds0:
+        type: com.zaxxer.hikari.HikariDataSource
+        driver-class-name: com.mysql.cj.jdbc.Driver
+        jdbc-url: jdbc:mysql://localhost:3306/shortlink_ds0
+        username: root
+        password:  ${DB_PASSWORD}
+      ds1:
+        type: com.zaxxer.hikari.HikariDataSource
+        driver-class-name: com.mysql.cj.jdbc.Driver
+        jdbc-url: jdbc:mysql://localhost:3306/
+        username: root
+        password: ${DB_PASSWORD}
+    rules:
+      sharding:
+        t_link:
+          actual-data-nodes: ds$->{0..1}.t_link_$->{0..7}
+          database-strategy:
+            standard:
+              sharding-column: gid
+              sharding-algorithm-name: db-hash
+          table-strategy:
+            standard:
+              sharding-column: gid
+              sharding-algorithm-name: tbl-mod
+        sharding-algorithms:
+          db-hash:
+            type: HASH_MOD
+            props:
+              sharding-count: 2
+          tbl-mod:
+            type: HASH_MOD
+            props:
+              sharding-count: 8
+    props:
+      sql-show: true
+  data:
+    redis:
+      host: localhost
+      port: 6379

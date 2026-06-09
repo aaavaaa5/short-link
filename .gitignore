@@ -36,3 +36,12 @@ build/
 
 ### Mac OS ###
 .DS_Store
+
+### Windows ###
+Thumbs.db
+
+### 设计文档（不参与版本控制）###
+../需求文档.md
+DEVELOPMENT_DOC.md
+DATABASE_DESIGN.md
+FUNCTION_MODULE_DESIGN.md
