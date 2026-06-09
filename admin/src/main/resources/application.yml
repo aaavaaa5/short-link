@@ -53,3 +53,14 @@ spring:
     redis:
       host: localhost
       port: 6379
+
+# ==================== 短链接配置 ====================
+shortlink:
+  # 短链接域名前缀（生成完整短链接时拼接）
+  domain: http://s.local
+  # JWT 配置
+  jwt:
+    # Token 有效期（小时）
+    expire-hours: 24
+    # 签名密钥（至少 256 位，生产环境必须修改）
+    secret: shortlink-admin-secret-key-min-256-bits!!

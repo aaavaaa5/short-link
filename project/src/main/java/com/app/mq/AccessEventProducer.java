@@ -14,12 +14,7 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
 
-/**
- * Redis Stream 访问事件生产者
- * <p>
- * 跳转成功后将访问事件写入 Stream（{@value #STREAM_KEY}），
- * 由 Admin 模块消费者异步解析 UA/GeoIP 后写入 t_access_log。
- */
+
 @Component
 public class AccessEventProducer {
 

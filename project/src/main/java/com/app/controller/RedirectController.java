@@ -18,12 +18,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import java.io.IOException;
 import java.time.LocalDateTime;
 
-/**
- * 短链接跳转控制器
- * <p>
- * 浏览器访问短链接 → 状态校验 → 302 重定向到原始 URL。
- * 校验不通过时展示 Thymeleaf 错误页面。
- */
+
 @Tag(name = "短链接跳转", description = "短码解析与 302 重定向接口")
 @Controller
 public class RedirectController {

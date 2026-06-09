@@ -15,25 +15,7 @@ import org.springframework.data.redis.serializer.RedisSerializer;
 
 import java.time.Duration;
 
-/**
- * Redis 配置 — StringRedisTemplate + Redisson 客户端
- * <p>
- * 职责：
- * <ul>
- *   <li>配置 {@link StringRedisTemplate}：Key/Value 统一使用 String 序列化，
- *       Hash/HyperLogLog/Bit/Stream 操作均使用原生 Redis 命令，无需额外序列化</li>
- *   <li>配置 {@link RedissonClient}：提供分布式锁、布隆过滤器（Redisson 版）、
- *       限流器等高级分布式组件</li>
- *   <li>配置 Lettuce 连接池：控制最大连接数、超时等</li>
- * </ul>
- * <p>
- * 为什么同时用 StringRedisTemplate 和 Redisson？
- * <ul>
- *   <li>StringRedisTemplate：轻量，适合高频读写（Bit/HyperLogLog/Stream 操作）</li>
- *   <li>Redisson：封装了分布式锁（RLock）、RBitSet、RHyperLogLog 等对象映射，
- *       适合需要语义化 API 的场景，且提供看门狗自动续期</li>
- * </ul>
- */
+
 @Configuration
 public class RedisConfig {
 
