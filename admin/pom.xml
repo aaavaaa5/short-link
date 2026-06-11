@@ -120,6 +120,13 @@
             <artifactId>guava</artifactId>
         </dependency>
 
+        <!-- ip2region 离线 IP 地理位置解析（免外部服务，精准到城市） -->
+        <dependency>
+            <groupId>org.lionsoul</groupId>
+            <artifactId>ip2region</artifactId>
+            <version>2.7.0</version>
+        </dependency>
+
         <!-- Sentinel 限流 -->
         <dependency>
             <groupId>com.alibaba.cloud</groupId>

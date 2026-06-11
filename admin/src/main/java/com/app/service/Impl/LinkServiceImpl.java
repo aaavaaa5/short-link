@@ -58,6 +58,7 @@ public class LinkServiceImpl implements LinkService {
 
     private static final int MAX_RETRY = 3;
     private static final String LOCK_PREFIX = "shortlink:lock:create:";
+    private static final String UPDATE_LOCK_PREFIX = "shortlink:lock:update:";
     private static final String CLICK_KEY_PATTERN = "shortlink:click:%d:%s:%s";
 
     // ==================== 创建 ====================
@@ -124,6 +125,27 @@ public class LinkServiceImpl implements LinkService {
             return Result.fail(Result.FORBIDDEN, "无权修改该短链接");
         }
 
+        // 分布式锁：防止并发更新同一条链接导致数据覆盖
+        String lockKey = UPDATE_LOCK_PREFIX + req.getId();
+        RLock lock = redissonClient.getLock(lockKey);
+        try {
+            if (lock.tryLock(1, 5, TimeUnit.SECONDS)) {
+                try {
+                    doUpdate(req);
+                } finally {
+                    lock.unlock();
+                }
+            } else {
+                return Result.fail("操作过于频繁，请稍后再试");
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return Result.fail("系统繁忙，请重试");
+        }
+        return Result.success();
+    }
+
+    private void doUpdate(LinkUpdateReqDTO req) {
         // 仅更新非 null 字段
         LambdaUpdateWrapper<LinkEntity> wrapper = Wrappers.lambdaUpdate();
         wrapper.eq(LinkEntity::getId, req.getId());
@@ -137,7 +159,6 @@ public class LinkServiceImpl implements LinkService {
         if (req.getEnableStatus() != null) wrapper.set(LinkEntity::getEnableStatus, req.getEnableStatus());
 
         linkMapper.update(null, wrapper);
-        return Result.success();
     }
 
     // ==================== 删除（逻辑删除） ====================

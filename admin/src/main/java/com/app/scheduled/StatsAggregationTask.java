@@ -6,6 +6,8 @@ import com.app.mapper.AccessStatsMapper;
 import com.app.mapper.LinkMapper;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
+import org.redisson.api.RLock;
+import org.redisson.api.RedissonClient;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -16,6 +18,7 @@ import org.springframework.stereotype.Component;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 
 /**
  * 每日统计聚合任务
@@ -30,6 +33,8 @@ import java.util.List;
  * </ul>
  * <p>
  * 同时更新 t_link.totalPv/totalUv/totalIpCount 累计字段。
+ * <p>
+ * 分布式锁：多实例部署时，只有拿到锁的实例执行聚合，避免 totalPv 重复累加。
  */
 @Component
 public class StatsAggregationTask {
@@ -45,11 +50,35 @@ public class StatsAggregationTask {
     @Autowired
     private StringRedisTemplate redisTemplate;
 
+    @Autowired
+    private RedissonClient redissonClient;
+
     private static final String CLICK_KEY = "shortlink:click:%d:%s:%s";
+    private static final String LOCK_KEY = "shortlink:lock:stats-aggregation";
 
     /** 每日凌晨 1:00 执行 */
     @Scheduled(cron = "0 0 1 * * ?")
     public void aggregate() {
+        RLock lock = redissonClient.getLock(LOCK_KEY);
+        // waitTime=0：拿不到锁立即放弃（说明另一个实例已经在执行了）
+        // leaseTime=1800s（30分钟）：聚合任务可能耗时较长，给足安全超时时间
+        try {
+            if (lock.tryLock(0, 1800, TimeUnit.SECONDS)) {
+                try {
+                    doAggregate();
+                } finally {
+                    lock.unlock();
+                }
+            } else {
+                log.info("聚合任务已被其他实例执行，跳过");
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            log.warn("聚合任务被中断");
+        }
+    }
+
+    private void doAggregate() {
         LocalDate yesterday = LocalDate.now().minusDays(1);
         log.info("开始聚合 {} 的访问统计数据...", yesterday);
 
