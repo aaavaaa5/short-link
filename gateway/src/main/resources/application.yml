@@ -1,5 +1,6 @@
 server:
-  port: 8080
+  port: 9000
+
 spring:
   application:
     name: shortlink-gateway
@@ -10,12 +11,38 @@ spring:
         namespace: shortlink
     gateway:
       routes:
+        # ==================== 短链接跳转（面向 C 端用户） ====================
         - id: shortlink-project
           uri: lb://shortlink-project
           predicates:
             - Path=/s/**
+          filters:
+            # 去掉 /s 前缀，转发到 project 的 /{shortUri}
+            - StripPrefix=1
+            # 按 IP 限流：每秒 replenishRate 个令牌，最大 burstCapacity 个突发
+            - name: RequestRateLimiter
+              args:
+                redis-rate-limiter.replenishRate: 100
+                redis-rate-limiter.burstCapacity: 200
+                redis-rate-limiter.requestedTokens: 1
+                key-resolver: "#{@ipKeyResolver}"
+
+        # ==================== 管理后台 API（面向管理员） ====================
         - id: shortlink-admin
           uri: lb://shortlink-admin
           predicates:
             - Path=/api/**
+          filters:
+            # 管理后台限流更严格（防止暴力破解登录）
+            - name: RequestRateLimiter
+              args:
+                redis-rate-limiter.replenishRate: 20
+                redis-rate-limiter.burstCapacity: 50
+                redis-rate-limiter.requestedTokens: 1
+                key-resolver: "#{@ipKeyResolver}"
 
+  # ==================== Redis（限流器依赖） ====================
+  data:
+    redis:
+      host: localhost
+      port: 6379

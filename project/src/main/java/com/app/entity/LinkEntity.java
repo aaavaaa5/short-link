@@ -1,5 +1,6 @@
 package com.app.entity;
 
+import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableName;
 import lombok.Data;
 
@@ -13,6 +14,8 @@ public class LinkEntity {
     private String originUrl;
     private String gid;
     private String title;
+    /** 短链接描述（describe 是 MySQL 保留字，需要反引号转义） */
+    @TableField("`describe`")
     private String describe;
     private Integer redirectType;
     private Integer expireType;

@@ -33,4 +33,11 @@ public class StatsController {
     public Result<StatsVO> getOverallStats() {
         return statsService.getOverallStats();
     }
+
+    @Operation(summary = "查询当前用户趋势数据（按日期聚合）")
+    @GetMapping("/trend")
+    public Result<StatsVO> getTrend(
+            @Parameter(description = "时间范围：7d / 30d") @RequestParam(defaultValue = "7d") String range) {
+        return statsService.getTrend(range);
+    }
 }

@@ -23,4 +23,12 @@ public interface StatsService {
      * @return 统计 VO
      */
     Result<StatsVO> getOverallStats();
+
+    /**
+     * 查询当前用户所有短链接的趋势数据（按日期聚合）
+     *
+     * @param range 时间范围：7d / 30d
+     * @return 统计 VO（含按日期聚合的每日明细）
+     */
+    Result<StatsVO> getTrend(String range);
 }

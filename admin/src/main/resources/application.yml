@@ -2,7 +2,10 @@ server:
   port: 8081
 spring:
   application:
-    name:  shortlink-admin
+    name: shortlink-admin
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration
   cloud:
     nacos:
       discovery:
@@ -11,7 +14,15 @@ spring:
       config:
         server-addr: 127.0.0.1:8848
         namespace: shortlink
+    # ==================== Sentinel 限流 ====================
+    sentinel:
+      enabled: true
+      transport:
+        dashboard: localhost:8080    # Sentinel Dashboard（可选）
+      eager: true                    # 启动时立即初始化
   shardingsphere:
+    mode:
+      type: Memory
     datasource:
       names: ds0, ds1
       ds0:
@@ -19,13 +30,13 @@ spring:
         driver-class-name: com.mysql.cj.jdbc.Driver
         jdbc-url: jdbc:mysql://localhost:3306/shortlink_ds0
         username: root
-        password:  ${DB_PASSWORD}
+        password: 123456
       ds1:
         type: com.zaxxer.hikari.HikariDataSource
         driver-class-name: com.mysql.cj.jdbc.Driver
-        jdbc-url: jdbc:mysql://localhost:3306/
+        jdbc-url: jdbc:mysql://localhost:3306/shortlink_ds1
         username: root
-        password: ${DB_PASSWORD}
+        password: 123456
     rules:
       sharding:
         t_link:
@@ -56,8 +67,8 @@ spring:
 
 # ==================== 短链接配置 ====================
 shortlink:
-  # 短链接域名前缀（生成完整短链接时拼接）
-  domain: http://s.local
+  # 短链接域名前缀（生成完整短链接时拼接，指向 Gateway）
+  domain: http://localhost:9000/s
   # JWT 配置
   jwt:
     # Token 有效期（小时）

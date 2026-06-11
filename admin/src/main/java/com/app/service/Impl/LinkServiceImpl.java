@@ -17,9 +17,17 @@ import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import org.redisson.api.RLock;
+import org.redisson.api.RedissonClient;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
+
+import java.time.LocalDate;
+import java.util.concurrent.TimeUnit;
 
 /**
  * 短链接服务实现
@@ -30,29 +38,52 @@ import org.springframework.stereotype.Service;
 @Service
 public class LinkServiceImpl implements LinkService {
 
+    private static final Logger log = LoggerFactory.getLogger(LinkServiceImpl.class);
+
     @Autowired
     private LinkMapper linkMapper;
 
     @Autowired
     private ShortLinkGenerator shortLinkGenerator;
 
+    @Autowired
+    private RedissonClient redissonClient;
+
+    @Autowired
+    private StringRedisTemplate redisTemplate;
+
     /** 短链接域名前缀 */
-    @Value("${shortlink.domain:http://s.local}")
+    @Value("${shortlink.domain:http://localhost:9000/s}")
     private String domain;
 
     private static final int MAX_RETRY = 3;
+    private static final String LOCK_PREFIX = "shortlink:lock:create:";
+    private static final String CLICK_KEY_PATTERN = "shortlink:click:%d:%s:%s";
 
     // ==================== 创建 ====================
 
     @Override
     public Result<LinkVO> create(LinkCreateReqDTO req) {
-        // 1. 生成短码（最多重试 3 次避免冲突）
+        // 1. 生成短码 + 分布式锁防并发冲突
         String shortUri = null;
         for (int i = 0; i < MAX_RETRY; i++) {
             String candidate = shortLinkGenerator.generate(req.getOriginUrl());
-            if (!shortUriExists(candidate)) {
-                shortUri = candidate;
-                break;
+            String lockKey = LOCK_PREFIX + candidate;
+            RLock lock = redissonClient.getLock(lockKey);
+            try {
+                if (lock.tryLock(1, 5, TimeUnit.SECONDS)) {
+                    try {
+                        if (!shortUriExists(candidate)) {
+                            shortUri = candidate;
+                            break;
+                        }
+                    } finally {
+                        lock.unlock();
+                    }
+                }
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return Result.fail("系统繁忙，请重试");
             }
         }
         if (shortUri == null) {
@@ -63,7 +94,7 @@ public class LinkServiceImpl implements LinkService {
         LinkEntity entity = new LinkEntity();
         entity.setShortUri(shortUri);
         entity.setOriginUrl(req.getOriginUrl());
-        entity.setGid(req.getGid());
+        entity.setGid(StrUtil.isNotBlank(req.getGid()) ? req.getGid() : "default");
         entity.setTitle(StrUtil.isBlank(req.getTitle()) ? "未命名" : req.getTitle());
         entity.setDescribe(req.getDescribe());
         entity.setRedirectType(req.getRedirectType() != null ? req.getRedirectType() : 0);
@@ -87,6 +118,10 @@ public class LinkServiceImpl implements LinkService {
         LinkEntity exist = linkMapper.selectById(req.getId());
         if (exist == null) {
             return Result.fail(Result.NOT_FOUND, "短链接不存在");
+        }
+        // 校验所有权：只能修改自己的短链接
+        if (!exist.getCreateUserId().equals(UserContext.getUserId())) {
+            return Result.fail(Result.FORBIDDEN, "无权修改该短链接");
         }
 
         // 仅更新非 null 字段
@@ -113,6 +148,10 @@ public class LinkServiceImpl implements LinkService {
         if (exist == null) {
             return Result.fail(Result.NOT_FOUND, "短链接不存在");
         }
+        // 校验所有权：只能删除自己的短链接
+        if (!exist.getCreateUserId().equals(UserContext.getUserId())) {
+            return Result.fail(Result.FORBIDDEN, "无权删除该短链接");
+        }
         linkMapper.deleteById(id);
         return Result.success();
     }
@@ -122,6 +161,8 @@ public class LinkServiceImpl implements LinkService {
     @Override
     public Result<IPage<LinkVO>> page(LinkPageReqDTO req) {
         LambdaQueryWrapper<LinkEntity> wrapper = Wrappers.lambdaQuery();
+        // 用户只能看到自己创建的短链接
+        wrapper.eq(LinkEntity::getCreateUserId, UserContext.getUserId());
         wrapper.eq(StrUtil.isNotBlank(req.getGid()), LinkEntity::getGid, req.getGid());
         wrapper.like(StrUtil.isNotBlank(req.getShortUri()), LinkEntity::getShortUri, req.getShortUri());
         wrapper.like(StrUtil.isNotBlank(req.getOriginUrl()), LinkEntity::getOriginUrl, req.getOriginUrl());
@@ -131,10 +172,25 @@ public class LinkServiceImpl implements LinkService {
         wrapper.orderByDesc(LinkEntity::getCreateTime);
 
         Page<LinkEntity> page = new Page<>(req.getPage(), req.getSize());
+        // ShardingSphere 不支持跨分片 count，禁用计数查询
+        page.setSearchCount(false);
         IPage<LinkEntity> entityPage = linkMapper.selectPage(page, wrapper);
+        // 手动设置 total（近似值，避免前端分页错乱）
+        if (entityPage.getRecords().size() < req.getSize()) {
+            entityPage.setTotal((long) (req.getPage() - 1) * req.getSize() + entityPage.getRecords().size());
+        } else {
+            entityPage.setTotal((long) req.getPage() * req.getSize() + 1);
+        }
 
-        // 转换 VO
-        IPage<LinkVO> voPage = entityPage.convert(this::toVO);
+        // 转换 VO + 用 Redis 实时数据覆盖 todayPv/todayUv/todayIpCount
+        String today = LocalDate.now().toString();
+        IPage<LinkVO> voPage = entityPage.convert(entity -> {
+            LinkVO vo = toVO(entity);
+            vo.setTodayPv(getRedisInt(String.format(CLICK_KEY_PATTERN, entity.getId(), today, "pv")));
+            vo.setTodayUv(getRedisInt(String.format(CLICK_KEY_PATTERN, entity.getId(), today, "uv")));
+            vo.setTodayIpCount(getRedisInt(String.format(CLICK_KEY_PATTERN, entity.getId(), today, "ip")));
+            return vo;
+        });
         return Result.success(voPage);
     }
 
@@ -159,5 +215,15 @@ public class LinkServiceImpl implements LinkService {
         BeanUtil.copyProperties(entity, vo);
         vo.setFullShortUrl(domain + "/" + entity.getShortUri());
         return vo;
+    }
+
+    /** 从 Redis 读取整数（PV/UV/IP 计数） */
+    private int getRedisInt(String key) {
+        try {
+            String val = redisTemplate.opsForValue().get(key);
+            return val != null ? Integer.parseInt(val) : 0;
+        } catch (Exception e) {
+            return 0;
+        }
     }
 }

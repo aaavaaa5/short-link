@@ -46,7 +46,6 @@ public class UserServiceImpl implements UserService {
         user.setPassword(BCrypt.hashpw(req.getPassword(), BCrypt.gensalt()));
         user.setRealName(req.getRealName());
         user.setEmail(req.getEmail());
-        user.setPhone(req.getPhone());
         user.setEnableStatus(1); // 默认启用
 
         userMapper.insert(user);

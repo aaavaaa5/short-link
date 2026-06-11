@@ -17,8 +17,7 @@ public class LinkCreateReqDTO {
     @Size(max = 2048, message = "URL 长度不能超过 2048")
     private String originUrl;
 
-    /** 分组标识 */
-    @NotBlank(message = "分组标识不能为空")
+    /** 分组标识（可选，前端不传则默认 'default'） */
     private String gid;
 
     /** 短链接标题 */

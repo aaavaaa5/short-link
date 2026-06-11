@@ -26,13 +26,8 @@ public class UserEntity {
     /** 邮箱 */
     private String email;
 
-    /** 手机号 */
-    private String phone;
-
-    /** 头像 URL */
-    private String avatar;
-
-    /** 账号启用状态：0-停用，1-启用 */
+    /** 账号启用状态：0-停用，1-启用（DB 列名为 status） */
+    @TableField("status")
     private Integer enableStatus;
 
     /** 创建时间 */

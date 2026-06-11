@@ -26,7 +26,8 @@ public class LinkEntity {
     /** 短链接标题 */
     private String title;
 
-    /** 短链接描述 */
+    /** 短链接描述（describe 是 MySQL 保留字，需要反引号转义） */
+    @TableField("`describe`")
     private String describe;
 
     /** 重定向类型：0-302 临时，1-301 永久 */

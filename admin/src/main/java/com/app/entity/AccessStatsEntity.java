@@ -1,6 +1,7 @@
 package com.app.entity;
 
 import com.baomidou.mybatisplus.annotation.IdType;
+import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 import lombok.Data;
@@ -23,7 +24,8 @@ public class AccessStatsEntity {
     /** 短链接分组标识，冗余字段便于按分组查询 */
     private String linkGid;
 
-    /** 统计日期 */
+    /** 统计日期（DDL 列名为 stat_date，与字段名 statsDate 不一致，需显式映射） */
+    @TableField("stat_date")
     private LocalDate statsDate;
 
     /** 当日 PV（页面浏览量） */
