@@ -40,4 +40,17 @@ public class StatsController {
             @Parameter(description = "时间范围：7d / 30d") @RequestParam(defaultValue = "7d") String range) {
         return statsService.getTrend(range);
     }
+
+    @Operation(summary = "查询仪表盘地区/浏览器/设备分布（当前用户所有短链接汇总）")
+    @GetMapping("/dashboard/distributions")
+    public Result<StatsVO> getDashboardDistributions() {
+        return statsService.getDashboardDistributions();
+    }
+
+    @Operation(summary = "查询单个短链接的地区/浏览器分布")
+    @GetMapping("/link/{linkId}/distributions")
+    public Result<StatsVO> getLinkDistributions(
+            @Parameter(description = "短链接 ID") @PathVariable Long linkId) {
+        return statsService.getLinkStats(linkId, "today");
+    }
 }

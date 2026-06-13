@@ -3,7 +3,6 @@ package com.app.dto.resp;
 import lombok.Data;
 
 import java.time.LocalDate;
-import java.time.LocalDateTime;
 import java.util.List;
 
 /**
@@ -42,6 +41,26 @@ public class StatsVO {
     /** 近 7 日 / 近 30 日每日统计明细（用于折线图） */
     private List<DailyStat> dailyStats;
 
+    // ==================== 地区/浏览器分布 ====================
+
+    /** 国家/地区分布（用于仪表盘和单链接统计） */
+    private List<NameCount> countries;
+
+    /** 省份分布 */
+    private List<NameCount> provinces;
+
+    /** 城市分布 */
+    private List<NameCount> cities;
+
+    /** 浏览器分布 */
+    private List<NameCount> browsers;
+
+    /** 操作系统分布 */
+    private List<NameCount> osList;
+
+    /** 设备类型分布 */
+    private List<NameCount> devices;
+
     // ==================== 内部类 ====================
 
     /**
@@ -61,5 +80,18 @@ public class StatsVO {
 
         /** 当日 IP 数 */
         private Long ipCount;
+    }
+
+    /**
+     * 名称-数量 统计项（用于地区、浏览器、OS、设备等分布）
+     */
+    @Data
+    public static class NameCount {
+
+        /** 名称（如 "中国"、"Chrome"、"Windows"） */
+        private String name;
+
+        /** 数量 */
+        private Long count;
     }
 }

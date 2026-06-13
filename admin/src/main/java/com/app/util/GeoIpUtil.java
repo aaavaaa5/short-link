@@ -51,13 +51,17 @@ public class GeoIpUtil {
     public void init() {
         try {
             // 从 classpath 读取 xdb 文件，复制到临时目录（避免 JAR 内无法 mmap）
-            ClassPathResource resource = new ClassPathResource("ip2region/ip2region.xdb");
-            if (!resource.exists()) {
-                log.warn("ip2region.xdb 文件不存在，GeoIP 解析将返回未知。"
-                        + "请从 https://github.com/lionsoul2014/ip2region 下载 xdb 文件，"
-                        + "放到 src/main/resources/ip2region/ip2region.xdb");
-                return;
-            }
+        // 文件名可能是 ip2region.xdb 或 ip2region_v4.xdb（v4 是最新数据库版本）
+        ClassPathResource resource = new ClassPathResource("ip2region/ip2region_v4.xdb");
+        if (!resource.exists()) {
+            resource = new ClassPathResource("ip2region/ip2region.xdb");
+        }
+        if (!resource.exists()) {
+            log.warn("ip2region xdb 文件不存在，GeoIP 解析将返回未知。"
+                    + "请从 https://github.com/lionsoul2014/ip2region 下载 xdb 文件，"
+                    + "放到 src/main/resources/ip2region/ 目录下");
+            return;
+        }
 
             Path tempFile = Files.createTempFile("ip2region_", ".xdb");
             tempFile.toFile().deleteOnExit();

@@ -1,6 +1,7 @@
 package com.app.entity;
 
 import com.baomidou.mybatisplus.annotation.IdType;
+import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 import lombok.Data;
@@ -41,6 +42,7 @@ public class AccessLogEntity {
     private String os;
 
     /** 设备类型：PC / Mobile / Tablet（UserAgentUtil 解析结果） */
+    @TableField("device_type")
     private String device;
 
     /** 国家（GeoIpUtil 解析结果） */

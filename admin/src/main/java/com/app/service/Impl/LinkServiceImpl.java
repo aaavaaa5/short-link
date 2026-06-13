@@ -95,7 +95,7 @@ public class LinkServiceImpl implements LinkService {
         LinkEntity entity = new LinkEntity();
         entity.setShortUri(shortUri);
         entity.setOriginUrl(req.getOriginUrl());
-        entity.setGid(StrUtil.isNotBlank(req.getGid()) ? req.getGid() : "default");
+        entity.setGid("u_" + UserContext.getUserId());
         entity.setTitle(StrUtil.isBlank(req.getTitle()) ? "未命名" : req.getTitle());
         entity.setDescribe(req.getDescribe());
         entity.setRedirectType(req.getRedirectType() != null ? req.getRedirectType() : 0);
@@ -150,7 +150,6 @@ public class LinkServiceImpl implements LinkService {
         LambdaUpdateWrapper<LinkEntity> wrapper = Wrappers.lambdaUpdate();
         wrapper.eq(LinkEntity::getId, req.getId());
         if (req.getOriginUrl() != null) wrapper.set(LinkEntity::getOriginUrl, req.getOriginUrl());
-        if (req.getGid() != null) wrapper.set(LinkEntity::getGid, req.getGid());
         if (req.getTitle() != null) wrapper.set(LinkEntity::getTitle, req.getTitle());
         if (req.getDescribe() != null) wrapper.set(LinkEntity::getDescribe, req.getDescribe());
         if (req.getRedirectType() != null) wrapper.set(LinkEntity::getRedirectType, req.getRedirectType());
@@ -204,12 +203,19 @@ public class LinkServiceImpl implements LinkService {
         }
 
         // 转换 VO + 用 Redis 实时数据覆盖 todayPv/todayUv/todayIpCount
+        // 累计 = DB 历史 + Redis 今日（聚合任务凌晨才写入 DB）
         String today = LocalDate.now().toString();
         IPage<LinkVO> voPage = entityPage.convert(entity -> {
             LinkVO vo = toVO(entity);
-            vo.setTodayPv(getRedisInt(String.format(CLICK_KEY_PATTERN, entity.getId(), today, "pv")));
-            vo.setTodayUv(getRedisInt(String.format(CLICK_KEY_PATTERN, entity.getId(), today, "uv")));
-            vo.setTodayIpCount(getRedisInt(String.format(CLICK_KEY_PATTERN, entity.getId(), today, "ip")));
+            int todayPv = getRedisInt(String.format(CLICK_KEY_PATTERN, entity.getId(), today, "pv"));
+            int todayUv = getRedisInt(String.format(CLICK_KEY_PATTERN, entity.getId(), today, "uv"));
+            int todayIp = getRedisInt(String.format(CLICK_KEY_PATTERN, entity.getId(), today, "ip"));
+            vo.setTodayPv(todayPv);
+            vo.setTodayUv(todayUv);
+            vo.setTodayIpCount(todayIp);
+            vo.setTotalPv((vo.getTotalPv() != null ? vo.getTotalPv() : 0L) + todayPv);
+            vo.setTotalUv((vo.getTotalUv() != null ? vo.getTotalUv() : 0L) + todayUv);
+            vo.setTotalIpCount((vo.getTotalIpCount() != null ? vo.getTotalIpCount() : 0L) + todayIp);
             return vo;
         });
         return Result.success(voPage);

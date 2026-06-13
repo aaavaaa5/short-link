@@ -3,9 +3,11 @@ package com.app.service.Impl;
 import cn.hutool.core.util.StrUtil;
 import com.app.dto.resp.StatsVO;
 import com.app.dto.resp.StatsVO.DailyStat;
+import com.app.dto.resp.StatsVO.NameCount;
 import com.app.entity.AccessStatsEntity;
 import com.app.entity.LinkEntity;
 import com.app.entity.Result;
+import com.app.mapper.AccessLogMapper;
 import com.app.mapper.AccessStatsMapper;
 import com.app.mapper.LinkMapper;
 import com.app.service.StatsService;
@@ -40,6 +42,9 @@ public class StatsServiceImpl implements StatsService {
     private AccessStatsMapper accessStatsMapper;
 
     @Autowired
+    private AccessLogMapper accessLogMapper;
+
+    @Autowired
     private StringRedisTemplate redisTemplate;
 
     private static final String CLICK_KEY_PATTERN = "shortlink:click:%d:%s:%s";
@@ -60,19 +65,33 @@ public class StatsServiceImpl implements StatsService {
         vo.setLinkId(link.getId());
         vo.setShortUri(link.getShortUri());
         vo.setOriginUrl(link.getOriginUrl());
-        vo.setTotalPv(link.getTotalPv() != null ? link.getTotalPv() : 0L);
-        vo.setTotalUv(link.getTotalUv() != null ? link.getTotalUv() : 0L);
-        vo.setTotalIpCount(link.getTotalIpCount() != null ? link.getTotalIpCount() : 0L);
 
         // 今日实时 → Redis
         String today = LocalDate.now().toString();
-        vo.setTodayPv(getRedisLong(String.format(CLICK_KEY_PATTERN, linkId, today, "pv")));
-        vo.setTodayUv(getRedisHll(String.format(CLICK_KEY_PATTERN, linkId, today, "uv")));
-        vo.setTodayIpCount(getRedisHll(String.format(CLICK_KEY_PATTERN, linkId, today, "ip")));
+        long todayPv = getRedisLong(String.format(CLICK_KEY_PATTERN, linkId, today, "pv"));
+        long todayUv = getRedisHll(String.format(CLICK_KEY_PATTERN, linkId, today, "uv"));
+        long todayIp = getRedisHll(String.format(CLICK_KEY_PATTERN, linkId, today, "ip"));
+        vo.setTodayPv(todayPv);
+        vo.setTodayUv(todayUv);
+        vo.setTodayIpCount(todayIp);
+
+        // 累计 = DB 历史累计（每日凌晨聚合写入） + Redis 今日实时
+        vo.setTotalPv((link.getTotalPv() != null ? link.getTotalPv() : 0L) + todayPv);
+        vo.setTotalUv((link.getTotalUv() != null ? link.getTotalUv() : 0L) + todayUv);
+        vo.setTotalIpCount((link.getTotalIpCount() != null ? link.getTotalIpCount() : 0L) + todayIp);
 
         // 每日明细 → t_access_stats
         int days = range.equals("7d") ? 7 : range.equals("30d") ? 30 : 1;
         vo.setDailyStats(queryDailyStats(linkId, days));
+
+        // 地区/浏览器分布 → t_access_log（带 link_gid 精准路由到单个分片）
+        String gid = link.getGid();
+        vo.setCountries(toNameCounts(accessLogMapper.countByCountry(linkId, gid)));
+        vo.setProvinces(toNameCounts(accessLogMapper.countByProvince(linkId, gid)));
+        vo.setCities(toNameCounts(accessLogMapper.countByCity(linkId, gid)));
+        vo.setBrowsers(toNameCounts(accessLogMapper.countByBrowser(linkId, gid)));
+        vo.setOsList(toNameCounts(accessLogMapper.countByOs(linkId, gid)));
+        vo.setDevices(toNameCounts(accessLogMapper.countByDevice(linkId, gid)));
 
         return Result.success(vo);
     }
@@ -240,6 +259,39 @@ public class StatsServiceImpl implements StatsService {
         return Result.success(vo);
     }
 
+    // ==================== 仪表盘分布统计 ====================
+
+    @Override
+    public Result<StatsVO> getDashboardDistributions() {
+        Long userId = UserContext.getUserId();
+        if (userId == null) {
+            return Result.fail(Result.UNAUTHORIZED, "未登录");
+        }
+
+        // 1. 获取当前用户的所有短链接 ID
+        LambdaQueryWrapper<LinkEntity> linkWrapper = Wrappers.lambdaQuery();
+        linkWrapper.eq(LinkEntity::getCreateUserId, userId);
+        List<LinkEntity> links = linkMapper.selectList(linkWrapper);
+
+        if (links.isEmpty()) {
+            return Result.success(new StatsVO());
+        }
+
+        List<Long> linkIds = links.stream().map(LinkEntity::getId).toList();
+
+        // 2. 从 t_access_log 查询各维度分布（同一用户的所有链接 gid 相同，精准路由）
+        String gid = links.get(0).getGid();
+        StatsVO vo = new StatsVO();
+        vo.setCountries(toNameCounts(accessLogMapper.countByCountryBatch(linkIds, gid)));
+        vo.setProvinces(toNameCounts(accessLogMapper.countByProvinceBatch(linkIds, gid)));
+        vo.setCities(toNameCounts(accessLogMapper.countByCityBatch(linkIds, gid)));
+        vo.setBrowsers(toNameCounts(accessLogMapper.countByBrowserBatch(linkIds, gid)));
+        vo.setOsList(toNameCounts(accessLogMapper.countByOsBatch(linkIds, gid)));
+        vo.setDevices(toNameCounts(accessLogMapper.countByDeviceBatch(linkIds, gid)));
+
+        return Result.success(vo);
+    }
+
     // ==================== 私有方法 ====================
 
     /** 从 Redis 读取 String 类型计数器 */
@@ -323,6 +375,23 @@ public class StatsServiceImpl implements StatsService {
             stat.setUv(entry.getValue()[1]);
             stat.setIpCount(entry.getValue()[2]);
             result.add(stat);
+        }
+        return result;
+    }
+
+    /**
+     * 将 Mapper 返回的 NameCountRow 列表转换为 StatsVO.NameCount 列表
+     */
+    private List<NameCount> toNameCounts(List<AccessLogMapper.NameCountRow> rows) {
+        if (rows == null || rows.isEmpty()) {
+            return new ArrayList<>();
+        }
+        List<NameCount> result = new ArrayList<>();
+        for (AccessLogMapper.NameCountRow row : rows) {
+            NameCount nc = new NameCount();
+            nc.setName(row.getName() != null ? row.getName() : "未知");
+            nc.setCount(row.getCnt() != null ? row.getCnt() : 0L);
+            result.add(nc);
         }
         return result;
     }
