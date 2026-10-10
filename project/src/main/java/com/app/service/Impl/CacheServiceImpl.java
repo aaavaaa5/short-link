@@ -75,25 +75,14 @@ public class CacheServiceImpl implements CacheService {
 
     @Override
     public boolean isNullCached(String shortUri) {
-        String nullKey = NULL_CACHE_KEY_PREFIX + shortUri;
-        // L1 Caffeine
-        String val = localCache.getIfPresent(nullKey);
-        if (val != null) {
-            return true;
-        }
-        // L2 Redis
-        val = redisTemplate.opsForValue().get(nullKey);
-        if (val != null) {
-            localCache.put(nullKey, val);
-            return true;
-        }
-        return false;
+        // 空值标记只放 L2（Redis），不进 L1：
+        // Caffeine 的过期时间是缓存级别的（5 分钟），而 Redis 的空值只留 1 分钟，
+        // 放进 L1 会让"该短码不存在"这个结论比预期活得更久
+        return Boolean.TRUE.equals(redisTemplate.hasKey(NULL_CACHE_KEY_PREFIX + shortUri));
     }
 
     @Override
     public void cacheNullStatus(String shortUri, Duration ttl) {
-        String nullKey = NULL_CACHE_KEY_PREFIX + shortUri;
-        localCache.put(nullKey, "1");
-        redisTemplate.opsForValue().set(nullKey, "1", ttl);
+        redisTemplate.opsForValue().set(NULL_CACHE_KEY_PREFIX + shortUri, "1", ttl);
     }
 }

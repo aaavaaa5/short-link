@@ -89,7 +89,10 @@ public class BloomFilterConfig {
             int h2 = hashFunction.hashString(value + ":" + salt, StandardCharsets.UTF_8).asInt();
             int[] result = new int[hashCount];
             for (int i = 0; i < hashCount; i++) {
-                result[i] = Math.abs((h1 + i * h2) % size);
+                // 用 long 运算：i * h2 与 h1 + i * h2 都可能溢出 int，
+                // 而且 Math.abs(Integer.MIN_VALUE) 仍是负数，会把负 offset 传给 SETBIT
+                long position = Math.abs((h1 + (long) i * h2) % size);
+                result[i] = (int) position;
             }
             return result;
         }

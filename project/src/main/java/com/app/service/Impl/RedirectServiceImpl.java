@@ -19,6 +19,7 @@ import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.concurrent.ThreadLocalRandom;
 
 
 @Service
@@ -42,6 +43,9 @@ public class RedirectServiceImpl implements RedirectService {
 
     /** 空值缓存 TTL（不存在的 key，短时间缓存防止穿透） */
     private static final Duration NULL_CACHE_TTL = Duration.ofMinutes(1);
+
+    /** TTL 随机扰动上界（秒）：给永久链接的缓存叠加 0~300 秒随机量，避免大量 key 同时失效（缓存雪崩） */
+    private static final long CACHE_TTL_JITTER_SECONDS = 300;
 
     // ==================== 短链接查询 ====================
 
@@ -143,14 +147,19 @@ public class RedirectServiceImpl implements RedirectService {
     }
 
     private Duration calcCacheTtl(LinkEntity entity) {
+        // 永久链接：基础 TTL 上叠加随机扰动，把失效时刻打散
+        long seconds = CACHE_TTL.getSeconds()
+                + ThreadLocalRandom.current().nextLong(CACHE_TTL_JITTER_SECONDS);
+
         if (entity.getExpireTime() != null) {
             LocalDateTime now = LocalDateTime.now();
             if (entity.getExpireTime().isAfter(now)) {
-                long seconds = Duration.between(now, entity.getExpireTime()).getSeconds();
-                long cacheSeconds = Math.min(seconds, CACHE_TTL.getSeconds());
-                return Duration.ofSeconds(Math.max(cacheSeconds, 1));
+                // 链接会过期：缓存不能活得比链接久，所以这种情况不加扰动
+                long remainSeconds = Duration.between(now, entity.getExpireTime()).getSeconds();
+                seconds = Math.min(remainSeconds, CACHE_TTL.getSeconds());
             }
         }
-        return CACHE_TTL;
+
+        return Duration.ofSeconds(Math.max(seconds, 1));
     }
 }
