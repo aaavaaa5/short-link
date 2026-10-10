@@ -59,7 +59,4 @@ public class AccessLogEntity {
 
     /** 访问时间（用户点击短链接的时刻） */
     private LocalDateTime accessTime;
-
-    /** 记录创建时间（消费者写入时间） */
-    private LocalDateTime createTime;
 }

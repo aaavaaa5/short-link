@@ -142,7 +142,6 @@ public class AccessEventConsumer {
             entity.setAccessTime(ts != null
                     ? LocalDateTime.ofInstant(Instant.ofEpochMilli(Long.parseLong(ts)), ZONE_ID)
                     : LocalDateTime.now());
-            entity.setCreateTime(LocalDateTime.now());
 
             accessLogMapper.insert(entity);
 

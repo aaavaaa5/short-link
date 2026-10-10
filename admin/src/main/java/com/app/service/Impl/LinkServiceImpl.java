@@ -130,6 +130,14 @@ public class LinkServiceImpl implements LinkService {
     }
 
     private void doUpdate(LinkUpdateReqDTO req) {
+        // 所有可更新字段都为 null 时直接返回：
+        // 否则 MyBatis-Plus 会拼出非法 SQL "UPDATE t_link SET WHERE id=?"，接口直接 500
+        if (req.getOriginUrl() == null && req.getTitle() == null && req.getDescribe() == null
+                && req.getRedirectType() == null && req.getExpireType() == null
+                && req.getExpireTime() == null && req.getEnableStatus() == null) {
+            return;
+        }
+
         // 仅更新非 null 字段
         LambdaUpdateWrapper<LinkEntity> wrapper = Wrappers.lambdaUpdate();
         wrapper.eq(LinkEntity::getId, req.getId());
