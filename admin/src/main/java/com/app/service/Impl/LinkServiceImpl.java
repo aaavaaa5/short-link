@@ -58,42 +58,14 @@ public class LinkServiceImpl implements LinkService {
 
     private static final int MAX_RETRY = 3;
     private static final String LOCK_PREFIX = "shortlink:lock:create:";
-    private static final String UPDATE_LOCK_PREFIX = "shortlink:lock:update:";
     private static final String CLICK_KEY_PATTERN = "shortlink:click:%d:%s:%s";
 
     // ==================== 创建 ====================
 
     @Override
     public Result<LinkVO> create(LinkCreateReqDTO req) {
-        // 1. 生成短码 + 分布式锁防并发冲突
-        String shortUri = null;
-        for (int i = 0; i < MAX_RETRY; i++) {
-            String candidate = shortLinkGenerator.generate(req.getOriginUrl());
-            String lockKey = LOCK_PREFIX + candidate;
-            RLock lock = redissonClient.getLock(lockKey);
-            try {
-                if (lock.tryLock(1, 5, TimeUnit.SECONDS)) {
-                    try {
-                        if (!shortUriExists(candidate)) {
-                            shortUri = candidate;
-                            break;
-                        }
-                    } finally {
-                        lock.unlock();
-                    }
-                }
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                return Result.fail("系统繁忙，请重试");
-            }
-        }
-        if (shortUri == null) {
-            return Result.fail("短码生成失败，请重试");
-        }
-
-        // 2. 构建实体
+        // 1. 构建实体（短码在下面的重试循环里确定）
         LinkEntity entity = new LinkEntity();
-        entity.setShortUri(shortUri);
         entity.setOriginUrl(req.getOriginUrl());
         entity.setGid("u_" + UserContext.getUserId());
         entity.setTitle(StrUtil.isBlank(req.getTitle()) ? "未命名" : req.getTitle());
@@ -105,11 +77,37 @@ public class LinkServiceImpl implements LinkService {
         entity.setCreateUserId(UserContext.getUserId());
         entity.setEnableStatus(1);
 
-        linkMapper.insert(entity);
+        // 2. 生成短码：查重与插入必须放在同一把锁的临界区内，
+        //    否则两个并发请求可能都通过查重、再先后插入同一个短码
+        boolean inserted = false;
+        for (int i = 0; i < MAX_RETRY && !inserted; i++) {
+            String candidate = shortLinkGenerator.generate(req.getOriginUrl());
+            RLock lock = redissonClient.getLock(LOCK_PREFIX + candidate);
+            try {
+                if (!lock.tryLock(1, 5, TimeUnit.SECONDS)) {
+                    continue;
+                }
+                try {
+                    if (shortUriExists(candidate)) {
+                        continue;
+                    }
+                    entity.setShortUri(candidate);
+                    linkMapper.insert(entity);
+                    inserted = true;
+                } finally {
+                    lock.unlock();
+                }
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return Result.fail("系统繁忙，请重试");
+            }
+        }
+        if (!inserted) {
+            return Result.fail("短码生成失败，请重试");
+        }
 
         // 3. 返回 VO
-        LinkVO vo = toVO(entity);
-        return Result.success(vo);
+        return Result.success(toVO(entity));
     }
 
     // ==================== 更新 ====================
@@ -125,23 +123,9 @@ public class LinkServiceImpl implements LinkService {
             return Result.fail(Result.FORBIDDEN, "无权修改该短链接");
         }
 
-        // 分布式锁：防止并发更新同一条链接导致数据覆盖
-        String lockKey = UPDATE_LOCK_PREFIX + req.getId();
-        RLock lock = redissonClient.getLock(lockKey);
-        try {
-            if (lock.tryLock(1, 5, TimeUnit.SECONDS)) {
-                try {
-                    doUpdate(req);
-                } finally {
-                    lock.unlock();
-                }
-            } else {
-                return Result.fail("操作过于频繁，请稍后再试");
-            }
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            return Result.fail("系统繁忙，请重试");
-        }
+        // doUpdate 只拼一条「仅更新非空字段」的原子 UPDATE，不存在读-改-写，
+        // 并发更新本身不会互相覆盖，因此不需要分布式锁
+        doUpdate(req);
         return Result.success();
     }
 
