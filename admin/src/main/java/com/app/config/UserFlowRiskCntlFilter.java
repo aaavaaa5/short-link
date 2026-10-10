@@ -13,16 +13,17 @@ import org.springframework.web.servlet.HandlerInterceptor;
 import java.time.Duration;
 
 /**
- * 用户级限流过滤器（第一层限流）
+ * 用户级限流过滤器（三层限流中的第 2 层）
  * <p>
  * 基于 Redis 固定时间窗口计数器，对每个用户限制每秒请求次数。
  * <p>
  * 拦截所有 /api/** 请求（白名单除外），超过阈值返回 429 Too Many Requests。
  * <p>
- * 与 Gateway 层的 IP 限流互补：
+ * 三层限流的分工：
  * <ul>
- *   <li>Gateway：按 IP 限流（防 DDoS / 暴力破解）</li>
- *   <li>本过滤器：按用户限流（防单用户高频调用 / 刷接口）</li>
+ *   <li>第 1 层 Gateway：按 IP 做令牌桶限流（防 DDoS / 暴力破解）</li>
+ *   <li>第 2 层 本过滤器：按用户做固定窗口限流，20 次/秒（防单用户高频调用 / 刷接口）</li>
+ *   <li>第 3 层 Sentinel：按接口做 QPS 限流，只拦创建短链接接口（保护最重的写接口）</li>
  * </ul>
  */
 @Component

@@ -8,10 +8,10 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 /**
  * Web MVC 配置
  * <p>
- * 拦截器执行顺序（order 越小越先执行）：
+ * 拦截器执行顺序（这里的 order 指拦截器的注册先后，与"限流第几层"不是同一个编号）：
  * <ol>
  *   <li>LoginInterceptor（order=1）— 登录校验，设置 UserContext</li>
- *   <li>UserFlowRiskCntlFilter（order=2）— 用户级限流（依赖 UserContext）</li>
+ *   <li>UserFlowRiskCntlFilter（order=2）— 用户级限流，三层限流中的第 2 层（依赖 UserContext）</li>
  * </ol>
  */
 @Configuration

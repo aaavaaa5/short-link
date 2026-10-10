@@ -17,12 +17,13 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Sentinel 配置（第二层：接口级限流）
+ * Sentinel 配置（三层限流中的第 3 层：接口级限流）
  * <p>
- * 与第一层 UserFlowRiskCntlFilter（用户级，20次/秒）互补：
+ * 三层限流的分工：
  * <ul>
- *   <li>第一层：按用户限流，拦截所有管理接口</li>
- *   <li>第二层：按接口限流，只拦截创建短链接接口（QPS=1）</li>
+ *   <li>第 1 层 Gateway：按 IP 做令牌桶限流（防 DDoS / 暴力破解）</li>
+ *   <li>第 2 层 UserFlowRiskCntlFilter：按用户做固定窗口限流，20 次/秒（拦截所有管理接口）</li>
+ *   <li>第 3 层 本配置：按接口做 QPS 限流，只拦截创建短链接接口（QPS=1）</li>
  * </ul>
  */
 @Configuration
