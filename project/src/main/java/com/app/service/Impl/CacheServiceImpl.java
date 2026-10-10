@@ -28,6 +28,9 @@ public class CacheServiceImpl implements CacheService {
 
     private static final String CACHE_KEY_PREFIX = "shortlink:";
 
+    /** 空值缓存 Key 前缀 */
+    private static final String NULL_CACHE_KEY_PREFIX = "shortlink:null:";
+
     // ==================== L1 + L2 联合查询 ====================
 
     @Override
@@ -66,5 +69,31 @@ public class CacheServiceImpl implements CacheService {
     @Override
     public void addToBloomFilter(String shortUri) {
         bloomFilterHelper.add(shortUri);
+    }
+
+    // ==================== 空值缓存（防缓存穿透） ====================
+
+    @Override
+    public boolean isNullCached(String shortUri) {
+        String nullKey = NULL_CACHE_KEY_PREFIX + shortUri;
+        // L1 Caffeine
+        String val = localCache.getIfPresent(nullKey);
+        if (val != null) {
+            return true;
+        }
+        // L2 Redis
+        val = redisTemplate.opsForValue().get(nullKey);
+        if (val != null) {
+            localCache.put(nullKey, val);
+            return true;
+        }
+        return false;
+    }
+
+    @Override
+    public void cacheNullStatus(String shortUri, Duration ttl) {
+        String nullKey = NULL_CACHE_KEY_PREFIX + shortUri;
+        localCache.put(nullKey, "1");
+        redisTemplate.opsForValue().set(nullKey, "1", ttl);
     }
 }

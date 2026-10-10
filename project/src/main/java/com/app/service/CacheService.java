@@ -27,4 +27,10 @@ public interface CacheService {
     boolean mightExist(String shortUri);
 
     void addToBloomFilter(String shortUri);
+
+    // ========== 空值缓存（防缓存穿透） ==========
+
+    boolean isNullCached(String shortUri);
+
+    void cacheNullStatus(String shortUri, Duration ttl);
 }

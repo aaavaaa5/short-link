@@ -40,6 +40,9 @@ public class RedirectServiceImpl implements RedirectService {
 
     private static final Duration CACHE_TTL = Duration.ofMinutes(30);
 
+    /** 空值缓存 TTL（不存在的 key，短时间缓存防止穿透） */
+    private static final Duration NULL_CACHE_TTL = Duration.ofMinutes(1);
+
     // ==================== 短链接查询 ====================
 
     @Override
@@ -56,6 +59,12 @@ public class RedirectServiceImpl implements RedirectService {
             return queryFromDb(shortUri);
         }
 
+        // 空值缓存命中 → 直接返回 null，防穿透
+        if (cacheService.isNullCached(shortUri)) {
+            log.debug("空值缓存命中，直接返回 null: shortUri={}", shortUri);
+            return null;
+        }
+
         // 布隆过滤器判否 → 仍走 DB 兜底（防止误判导致新短链接永远 404）
         if (!cacheService.mightExist(shortUri)) {
             log.debug("布隆过滤器判否，走 DB 兜底: shortUri={}", shortUri);
@@ -68,6 +77,9 @@ public class RedirectServiceImpl implements RedirectService {
             Duration ttl = calcCacheTtl(entity);
             cacheService.cacheOriginUrl(shortUri, entity.getOriginUrl(), ttl);
             cacheService.addToBloomFilter(shortUri);
+        } else {
+            // DB 查不到 → 缓存空值，防后续穿透
+            cacheService.cacheNullStatus(shortUri, NULL_CACHE_TTL);
         }
         return entity;
     }
