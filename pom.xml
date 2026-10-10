@@ -10,10 +10,11 @@
   <name>shortlink</name>
   <url>http://maven.apache.org</url>
 
-  <modules>
-    <module>admin</module>
-    <module>project</module>
-    <module>gateway</module>
+    <modules>
+        <module>common</module>
+        <module>admin</module>
+        <module>project</module>
+        <module>gateway</module>
   </modules>
 
   <properties>

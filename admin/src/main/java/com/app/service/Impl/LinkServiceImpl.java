@@ -2,6 +2,8 @@ package com.app.service.Impl;
 
 import cn.hutool.core.bean.BeanUtil;
 import cn.hutool.core.util.StrUtil;
+import com.app.common.bloom.BloomFilterHelper;
+import com.app.common.cache.CacheKeys;
 import com.app.dto.req.LinkCreateReqDTO;
 import com.app.dto.req.LinkPageReqDTO;
 import com.app.dto.req.LinkUpdateReqDTO;
@@ -52,6 +54,9 @@ public class LinkServiceImpl implements LinkService {
     @Autowired
     private StringRedisTemplate redisTemplate;
 
+    @Autowired
+    private BloomFilterHelper bloomFilterHelper;
+
     /** 短链接域名前缀 */
     @Value("${shortlink.domain:http://localhost:9000/s}")
     private String domain;
@@ -92,6 +97,11 @@ public class LinkServiceImpl implements LinkService {
                         continue;
                     }
                     entity.setShortUri(candidate);
+                    // 先写布隆位图、再入库：
+                    // 位图写失败就中止创建（避免出现"库里存在、过滤器却说没有"的短码，
+                    // 那会让它上线后一直被跳转服务判为不存在）；
+                    // 位图写成功但入库失败，只会留下一个无害的假阳性。
+                    bloomFilterHelper.add(candidate);
                     linkMapper.insert(entity);
                     inserted = true;
                 } finally {
@@ -126,6 +136,7 @@ public class LinkServiceImpl implements LinkService {
         // doUpdate 只拼一条「仅更新非空字段」的原子 UPDATE，不存在读-改-写，
         // 并发更新本身不会互相覆盖，因此不需要分布式锁
         doUpdate(req);
+        evictCache(exist.getShortUri());
         return Result.success();
     }
 
@@ -152,6 +163,24 @@ public class LinkServiceImpl implements LinkService {
         linkMapper.update(null, wrapper);
     }
 
+    /**
+     * 写操作后删除 Redis 里的实体缓存（L2），让"停用 / 删除 / 改原链接"尽快生效。
+     * <p>
+     * L1 是各个 project 实例自己的 JVM 内存，跨进程删不掉，只能依赖它 60 秒的 TTL 自然过期，
+     * 所以这里只能做到 L2 即时失效、L1 最长 1 分钟内失效。
+     */
+    private void evictCache(String shortUri) {
+        if (StrUtil.isBlank(shortUri)) {
+            return;
+        }
+        try {
+            redisTemplate.delete(CacheKeys.linkEntity(shortUri));
+        } catch (Exception e) {
+            // 删缓存失败不影响主流程：缓存还有 TTL 兜底，最多晚一点生效
+            log.warn("删除短链缓存失败: shortUri={}", shortUri, e);
+        }
+    }
+
     // ==================== 删除（逻辑删除） ====================
 
     @Override
@@ -165,6 +194,7 @@ public class LinkServiceImpl implements LinkService {
             return Result.fail(Result.FORBIDDEN, "无权删除该短链接");
         }
         linkMapper.deleteById(id);
+        evictCache(exist.getShortUri());
         return Result.success();
     }
 

@@ -55,31 +55,32 @@ public class RedirectServiceImpl implements RedirectService {
             return null;
         }
 
-        // L1 Caffeine → L2 Redis（CacheService 内部已串联）
-        String cachedUrl = cacheService.getOriginUrl(shortUri);
-        if (cachedUrl != null) {
+        // 1. L1 Caffeine → L2 Redis：缓存里存的是完整实体的 JSON，命中直接返回，不再回表
+        LinkEntity cached = cacheService.getLinkEntity(shortUri);
+        if (cached != null) {
             log.debug("缓存命中: shortUri={}", shortUri);
-            // 缓存命中但仍需 DB 获取完整实体（enableStatus / delFlag / expireTime）
-            return queryFromDb(shortUri);
+            return cached;
         }
 
-        // 空值缓存命中 → 直接返回 null，防穿透
+        // 2. 空值缓存命中 → 该短码此前已确认不存在，直接返回
         if (cacheService.isNullCached(shortUri)) {
             log.debug("空值缓存命中，直接返回 null: shortUri={}", shortUri);
             return null;
         }
 
-        // 布隆过滤器判否 → 仍走 DB 兜底（防止误判导致新短链接永远 404）
+        // 3. 布隆过滤器判否 → 短码一定不存在，直接返回，不打数据库
+        //    前提：新建短码时会同步写入位图、历史数据已回填（见 admin 的 BloomBackfillRunner），
+        //    否则新建的短链会因为没有位图而被误判为不存在
         if (!cacheService.mightExist(shortUri)) {
-            log.debug("布隆过滤器判否，走 DB 兜底: shortUri={}", shortUri);
+            log.debug("布隆过滤器判否，直接返回 null: shortUri={}", shortUri);
+            return null;
         }
 
-        // MySQL 兜底 + 回写缓存
+        // 4. 回源 MySQL + 回写缓存
         log.debug("缓存未命中，查 DB: shortUri={}", shortUri);
         LinkEntity entity = queryFromDb(shortUri);
         if (entity != null) {
-            Duration ttl = calcCacheTtl(entity);
-            cacheService.cacheOriginUrl(shortUri, entity.getOriginUrl(), ttl);
+            cacheService.cacheLinkEntity(shortUri, entity, calcCacheTtl(entity));
             cacheService.addToBloomFilter(shortUri);
         } else {
             // DB 查不到 → 缓存空值，防后续穿透

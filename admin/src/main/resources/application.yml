@@ -69,6 +69,18 @@ spring:
 shortlink:
   # 短链接域名前缀（生成完整短链接时拼接，指向 Gateway）
   domain: http://localhost:9000/s
+  # ==================== 布隆过滤器 ====================
+  # 必须与 project 模块配置完全一致：两个服务操作的是同一个 Redis 位图，
+  # 参数一旦不一致，会出现"admin 写入的位置 project 查不到"，过滤器静默失效
+  bloom-filter:
+    # Bitmap 大小（bits），默认 2^25 ≈ 4 MB
+    size: 33554432
+    # 哈希函数数量
+    hash-count: 3
+    # 哈希加盐值
+    salt: default
+    # Redis Key（与 project 保持一致）
+    key: shortlink:bf:short_uri
   # JWT 配置
   jwt:
     # Token 有效期（小时）
