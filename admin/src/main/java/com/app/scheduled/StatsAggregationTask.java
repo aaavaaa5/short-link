@@ -116,6 +116,11 @@ public class StatsAggregationTask {
         wrapper.eq(AccessStatsEntity::getStatsDate, date);
         AccessStatsEntity stats = accessStatsMapper.selectOne(wrapper);
 
+        // 本次聚合前，该日期已计入累计值的数值；用于计算增量，保证任务重复执行不会重复累加
+        long previousPv = (stats != null && stats.getPv() != null) ? stats.getPv() : 0L;
+        long previousUv = (stats != null && stats.getUv() != null) ? stats.getUv() : 0L;
+        long previousIp = (stats != null && stats.getIpCount() != null) ? stats.getIpCount() : 0L;
+
         if (stats == null) {
             stats = new AccessStatsEntity();
             stats.setLinkId(link.getId());
@@ -134,10 +139,10 @@ public class StatsAggregationTask {
             accessStatsMapper.updateById(stats);
         }
 
-        // 3. 更新 t_link 累计数据
-        link.setTotalPv((link.getTotalPv() != null ? link.getTotalPv() : 0) + yesterdayPv);
-        link.setTotalUv((link.getTotalUv() != null ? link.getTotalUv() : 0) + yesterdayUv);
-        link.setTotalIpCount((link.getTotalIpCount() != null ? link.getTotalIpCount() : 0) + yesterdayIp);
+        // 3. 更新 t_link 累计数据（按增量累加：重复执行同一天时增量为 0，保证幂等）
+        link.setTotalPv((link.getTotalPv() != null ? link.getTotalPv() : 0L) + (yesterdayPv - previousPv));
+        link.setTotalUv((link.getTotalUv() != null ? link.getTotalUv() : 0L) + (yesterdayUv - previousUv));
+        link.setTotalIpCount((link.getTotalIpCount() != null ? link.getTotalIpCount() : 0L) + (yesterdayIp - previousIp));
         linkMapper.updateById(link);
     }
 
