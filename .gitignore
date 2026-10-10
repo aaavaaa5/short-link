@@ -45,3 +45,6 @@ Thumbs.db
 DEVELOPMENT_DOC.md
 DATABASE_DESIGN.md
 FUNCTION_MODULE_DESIGN.md
+
+### 本地开发工具（构建产物，不参与版本控制）###
+devenv-dashboard.exe
