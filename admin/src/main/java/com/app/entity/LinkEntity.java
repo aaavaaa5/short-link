@@ -10,8 +10,8 @@ import java.time.LocalDateTime;
 @TableName("t_link")
 public class LinkEntity {
 
-    /** 主键 ID，数据库自增 */
-    @TableId(type = IdType.AUTO)
+    /** 主键 ID，分布式 Snowflake ID */
+    @TableId(type = IdType.ASSIGN_ID)
     private Long id;
 
     /** 短码（唯一索引），用于短链接解析 */

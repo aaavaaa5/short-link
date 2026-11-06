@@ -86,7 +86,7 @@ public class GeoIpUtil {
             return isPrivateIp(ip) ? "内网" : "未知";
         }
         String[] parts = queryIp2Region(ip);
-        return parts.length > 0 ? parts[0] : "未知";
+        return valueOrUnknown(parts, 0);
     }
 
     /**
@@ -97,8 +97,8 @@ public class GeoIpUtil {
             return isPrivateIp(ip) ? "内网" : "未知";
         }
         String[] parts = queryIp2Region(ip);
-        // 格式：国家|区域|省份|城市|ISP
-        return parts.length > 2 ? parts[2] : "未知";
+        // v4 格式：国家|省份|城市|0|ISP/国家码
+        return valueOrUnknown(parts, 1);
     }
 
     /**
@@ -109,7 +109,7 @@ public class GeoIpUtil {
             return isPrivateIp(ip) ? "内网" : "未知";
         }
         String[] parts = queryIp2Region(ip);
-        return parts.length > 3 ? parts[3] : "未知";
+        return valueOrUnknown(parts, 2);
     }
 
     // ==================== 私有方法 ====================
@@ -135,6 +135,13 @@ public class GeoIpUtil {
 
     private boolean isPrivateOrBlank(String ip) {
         return StrUtil.isBlank(ip) || isPrivateIp(ip);
+    }
+
+    private String valueOrUnknown(String[] parts, int index) {
+        if (index >= parts.length || StrUtil.isBlank(parts[index]) || "0".equals(parts[index])) {
+            return "未知";
+        }
+        return parts[index];
     }
 
     /**

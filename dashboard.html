@@ -1,0 +1,456 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DevEnv Dashboard</title>
+<style>
+/* ============================================================
+   DevEnv Dashboard — Dark Mode Theme
+   ============================================================ */
+:root {
+    --bg-primary: #0d1117;
+    --bg-secondary: #161b22;
+    --bg-card: #1c2129;
+    --bg-card-hover: #222833;
+    --border: #30363d;
+    --text-primary: #e6edf3;
+    --text-secondary: #8b949e;
+    --text-muted: #6e7681;
+    --accent-blue: #58a6ff;
+    --accent-green: #3fb950;
+    --accent-orange: #d29922;
+    --accent-red: #f85149;
+    --accent-purple: #a371f7;
+    --accent-cyan: #39d2c0;
+    --shadow: 0 2px 8px rgba(0,0,0,0.3);
+    --radius: 10px;
+    --radius-sm: 6px;
+}
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+                 'Helvetica Neue', Arial, sans-serif;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    min-height: 100vh;
+    line-height: 1.6;
+}
+
+/* ---- Header ---- */
+.header {
+    background: var(--bg-secondary);
+    border-bottom: 1px solid var(--border);
+    padding: 24px 32px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 16px;
+}
+
+.header-title {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.header-title .icon {
+    font-size: 28px;
+}
+
+.header-title h1 {
+    font-size: 22px;
+    font-weight: 600;
+    letter-spacing: -0.3px;
+}
+
+.header-meta {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    color: var(--text-secondary);
+    font-size: 13px;
+}
+
+.live-clock {
+    font-variant-numeric: tabular-nums;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 6px 14px;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--accent-cyan);
+    min-width: 140px;
+    text-align: center;
+}
+
+.scan-dir {
+    color: var(--text-muted);
+    font-size: 12px;
+    font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+}
+
+/* ---- Main Layout ---- */
+.container {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 28px 24px;
+}
+
+/* ---- Stats Grid (Flexbox) ---- */
+.stats-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 20px;
+    margin-bottom: 28px;
+}
+
+.stat-card {
+    flex: 1;
+    min-width: 220px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 22px 24px;
+    transition: border-color 0.2s, transform 0.15s;
+}
+
+.stat-card:hover {
+    border-color: var(--accent-blue);
+    transform: translateY(-2px);
+}
+
+.stat-label {
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    color: var(--text-muted);
+    margin-bottom: 8px;
+    font-weight: 500;
+}
+
+.stat-value {
+    font-size: 32px;
+    font-weight: 700;
+    letter-spacing: -1px;
+}
+
+.stat-value.files { color: var(--accent-blue); }
+.stat-value.lines { color: var(--accent-green); }
+.stat-value.git   { color: var(--accent-purple); }
+.stat-value.recent { color: var(--accent-orange); }
+
+.stat-sub {
+    font-size: 13px;
+    color: var(--text-secondary);
+    margin-top: 4px;
+}
+
+/* ---- Git Status ---- */
+.git-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 22px 24px;
+    margin-bottom: 28px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 16px;
+}
+
+.git-info {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.git-branch {
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    font-size: 15px;
+    font-weight: 600;
+}
+
+.git-status-badge {
+    padding: 5px 14px;
+    border-radius: 20px;
+    font-size: 13px;
+    font-weight: 600;
+}
+
+.status-clean  { background: rgba(63,185,80,0.15); color: var(--accent-green); }
+.status-dirty  { background: rgba(248,81,73,0.15); color: var(--accent-red); }
+.status-none   { background: rgba(139,148,158,0.15); color: var(--text-muted); }
+
+/* ---- Progress Bar ---- */
+.progress-section {
+    margin-bottom: 28px;
+}
+
+.progress-label {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 8px;
+    font-size: 13px;
+    color: var(--text-secondary);
+}
+
+.progress-track {
+    background: var(--bg-secondary);
+    border-radius: 20px;
+    height: 8px;
+    overflow: hidden;
+}
+
+.progress-fill {
+    height: 100%;
+    border-radius: 20px;
+    background: linear-gradient(90deg, var(--accent-green), var(--accent-cyan));
+    transition: width 0.4s ease;
+}
+
+/* ---- Table ---- */
+.section-title {
+    font-size: 16px;
+    font-weight: 600;
+    margin-bottom: 16px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--border);
+}
+
+.table-wrap {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+    margin-bottom: 28px;
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+th {
+    text-align: left;
+    padding: 12px 20px;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    color: var(--text-muted);
+    background: var(--bg-secondary);
+    border-bottom: 1px solid var(--border);
+    font-weight: 500;
+}
+
+td {
+    padding: 10px 20px;
+    font-size: 14px;
+    border-bottom: 1px solid var(--border);
+    color: var(--text-primary);
+}
+
+tr:last-child td {
+    border-bottom: none;
+}
+
+tr:hover td {
+    background: var(--bg-card-hover);
+}
+
+.file-path {
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    font-size: 13px;
+    color: var(--accent-blue);
+    max-width: 420px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.age-badge {
+    display: inline-block;
+    padding: 2px 10px;
+    border-radius: 12px;
+    font-size: 12px;
+    font-weight: 600;
+    background: rgba(210,153,34,0.15);
+    color: var(--accent-orange);
+}
+
+.empty {
+    text-align: center;
+    color: var(--text-muted);
+    padding: 28px 0 !important;
+}
+
+/* ---- Footer ---- */
+.footer {
+    text-align: center;
+    padding: 24px;
+    color: var(--text-muted);
+    font-size: 12px;
+    border-top: 1px solid var(--border);
+    margin-top: 20px;
+}
+
+.footer strong {
+    color: var(--accent-cyan);
+    font-weight: 600;
+}
+
+/* ---- Responsive ---- */
+@media (max-width: 768px) {
+    .header {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+
+    .stat-card {
+        min-width: 100%;
+    }
+
+    .git-card {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+}
+</style>
+</head>
+<body>
+
+<!-- ============= HEADER ============= -->
+<header class="header">
+    <div class="header-title">
+        <span class="icon">📊</span>
+        <h1>DevEnv Dashboard</h1>
+    </div>
+    <div class="header-meta">
+        <span class="scan-dir">📁 D:\new_short_link\shortlink</span>
+        <div class="live-clock" id="liveClock">--</div>
+    </div>
+</header>
+
+<!-- ============= MAIN CONTENT ============= -->
+<main class="container">
+
+    <!-- Stats Cards -->
+    <div class="stats-grid">
+        <div class="stat-card">
+            <div class="stat-label">📄 Code Files</div>
+            <div class="stat-value files">94</div>
+            <div class="stat-sub">discovered in scan</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-label">📝 Total Lines</div>
+            <div class="stat-value lines">10,713</div>
+            <div class="stat-sub">across all files</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-label">🔀 Git Branch</div>
+            <div class="stat-value git">project</div>
+            <div class="stat-sub"><span class="git-status-badge status-dirty">15 untracked</span></div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-label">🕐 Recent Changes</div>
+            <div class="stat-value recent">0</div>
+            <div class="stat-sub">files modified in 7 days</div>
+        </div>
+    </div>
+
+    <!-- Git Status Bar -->
+    <div class="git-card">
+        <div class="git-info">
+            <span style="font-size:20px;">🐙</span>
+            <span class="git-branch">project</span>
+        </div>
+        <span class="git-status-badge status-dirty">15 untracked</span>
+    </div>
+
+    <!-- Code Health Progress (files with recent changes ratio) -->
+    <div class="progress-section">
+        <div class="progress-label">
+            <span>📈 Project Activity</span>
+            <span id="progressPercent">0%</span>
+        </div>
+        <div class="progress-track">
+            <div class="progress-fill" id="progressFill" style="width:0%"></div>
+        </div>
+    </div>
+
+    <!-- Recent Files Table -->
+    <div class="table-wrap">
+        <div class="section-title" style="padding:16px 20px 12px;">🕐 Recently Modified Files (Last 7 Days)</div>
+        <table>
+            <thead>
+                <tr>
+                    <th>File Path</th>
+                    <th>Last Modified</th>
+                    <th>Age</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr><td colspan="3" class="empty">No recently modified files found</td></tr>
+            </tbody>
+        </table>
+    </div>
+
+</main>
+
+<!-- ============= FOOTER ============= -->
+<footer class="footer">
+    <p>
+        Generated by <strong>DevEnv Dashboard</strong> &nbsp;·&nbsp;
+        Scan at: 2026-07-15 22:06:52 &nbsp;·&nbsp;
+        Rendered: 2026-07-15 22:06:52
+    </p>
+</footer>
+
+<!-- ============= LIVE CLOCK (Pure JavaScript) ============= -->
+<script>
+(function() {
+    var el = document.getElementById('liveClock');
+    if (!el) return;
+
+    function pad(n) { return n < 10 ? '0' + n : n; }
+
+    function tick() {
+        var now = new Date();
+        var str = now.getFullYear() + '-' +
+                  pad(now.getMonth() + 1) + '-' +
+                  pad(now.getDate()) + ' ' +
+                  pad(now.getHours()) + ':' +
+                  pad(now.getMinutes()) + ':' +
+                  pad(now.getSeconds());
+        el.textContent = '🕐 ' + str;
+    }
+
+    tick();
+    setInterval(tick, 1000);
+
+    // ---- Progress bar animation ----
+    var totalFiles = 94;
+    var recentFiles = 0;
+    var pct = totalFiles > 0 ? Math.round((recentFiles / totalFiles) * 100) : 0;
+    var fill = document.getElementById('progressFill');
+    var label = document.getElementById('progressPercent');
+    if (fill && label) {
+        setTimeout(function() {
+            fill.style.width = pct + '%';
+            label.textContent = pct + '%';
+        }, 300);
+    }
+})();
+</script>
+
+</body>
+</html>

@@ -6,6 +6,8 @@
 -- 分片中间件：ShardingSphere-JDBC 5.3.2
 -- ============================================================
 
+SET NAMES utf8mb4;
+
 -- -------------------------------------------------------
 -- 创建逻辑数据库（实际环境中两个库可能在不同实例上）
 -- -------------------------------------------------------
@@ -23,13 +25,13 @@ USE shortlink_ds0;
 -- -------------------------------------------------------
 
 CREATE TABLE t_link_0 (
-    id              BIGINT        NOT NULL AUTO_INCREMENT                COMMENT '主键ID（雪花算法）',
+    id              BIGINT        NOT NULL                               COMMENT '主键ID（Snowflake）',
     short_uri       VARCHAR(32)   NOT NULL                               COMMENT '短链接码，Base62编码6~8位',
     origin_url      VARCHAR(2048) NOT NULL                               COMMENT '原始长链接',
     gid             VARCHAR(32)   NOT NULL  DEFAULT 'default'           COMMENT '分组标识（分库分表键）',
     title           VARCHAR(512)  NULL                                   COMMENT '目标网页标题（Jsoup异步抓取）',
     `describe`      VARCHAR(1024) NULL                                   COMMENT '备注描述',
-    redirect_type   TINYINT       NOT NULL  DEFAULT 302                 COMMENT '跳转方式：301-永久 302-临时',
+    redirect_type   TINYINT       NOT NULL  DEFAULT 0                   COMMENT '跳转方式：0-302临时 1-301永久',
     expire_type     TINYINT       NOT NULL  DEFAULT 0                   COMMENT '有效期类型：0-永久有效 1-指定日期失效',
     expire_time     DATETIME      NULL                                   COMMENT '失效时间',
     total_pv        BIGINT        NOT NULL  DEFAULT 0                   COMMENT '累计访问量(PV)',
@@ -67,7 +69,8 @@ CREATE TABLE t_link_7 LIKE t_link_0;
 -- -------------------------------------------------------
 
 CREATE TABLE t_access_log_0 (
-    id              BIGINT        NOT NULL AUTO_INCREMENT                COMMENT '主键ID',
+    id              BIGINT        NOT NULL                               COMMENT '主键ID（Snowflake）',
+    message_id      VARCHAR(64)   NULL                                   COMMENT 'Redis Stream消息ID（消费幂等）',
     link_id         BIGINT        NOT NULL                               COMMENT '短链接ID',
     link_gid        VARCHAR(32)   NOT NULL                               COMMENT '短链接gid（分片键）',
     short_uri       VARCHAR(32)   NOT NULL                               COMMENT '短链接码（冗余）',
@@ -86,6 +89,7 @@ CREATE TABLE t_access_log_0 (
     city            VARCHAR(64)   NULL                                   COMMENT '城市',
     access_time     DATETIME(3)   NOT NULL                               COMMENT '访问时间（毫秒精度）',
     PRIMARY KEY (id),
+    UNIQUE KEY uk_link_gid_message (link_gid, message_id),
     KEY idx_link_id_time (link_id, access_time),
     KEY idx_link_gid_time (link_gid, access_time),
     KEY idx_access_time (access_time),
@@ -107,7 +111,7 @@ CREATE TABLE t_access_log_7 LIKE t_access_log_0;
 -- -------------------------------------------------------
 
 CREATE TABLE t_access_stats_0 (
-    id              BIGINT        NOT NULL AUTO_INCREMENT                COMMENT '主键ID',
+    id              BIGINT        NOT NULL                               COMMENT '主键ID（Snowflake）',
     link_id         BIGINT        NOT NULL                               COMMENT '短链接ID',
     link_gid        VARCHAR(32)   NOT NULL                               COMMENT '短链接gid（分片键）',
     stat_date       DATE          NOT NULL                               COMMENT '统计日期',
@@ -137,7 +141,7 @@ CREATE TABLE t_access_stats_7 LIKE t_access_stats_0;
 -- -------------------------------------------------------
 
 CREATE TABLE t_access_region_stats_0 (
-    id              BIGINT        NOT NULL AUTO_INCREMENT                COMMENT '主键ID',
+    id              BIGINT        NOT NULL                               COMMENT '主键ID（Snowflake）',
     link_id         BIGINT        NOT NULL                               COMMENT '短链接ID',
     link_gid        VARCHAR(32)   NOT NULL                               COMMENT '短链接gid（分片键）',
     stat_date       DATE          NOT NULL                               COMMENT '统计日期',
@@ -161,6 +165,21 @@ CREATE TABLE t_access_region_stats_4 LIKE t_access_region_stats_0;
 CREATE TABLE t_access_region_stats_5 LIKE t_access_region_stats_0;
 CREATE TABLE t_access_region_stats_6 LIKE t_access_region_stats_0;
 CREATE TABLE t_access_region_stats_7 LIKE t_access_region_stats_0;
+
+-- -------------------------------------------------------
+-- 1.5 短码路由索引（单表，固定放在 ds0）
+-- -------------------------------------------------------
+
+CREATE TABLE t_link_route (
+    short_uri   VARCHAR(32) NOT NULL                               COMMENT '短链接码',
+    link_id     BIGINT      NOT NULL                               COMMENT '短链接ID（Snowflake）',
+    gid         VARCHAR(32) NOT NULL                               COMMENT '短链接gid（分片键）',
+    create_time DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP     COMMENT '创建时间',
+    PRIMARY KEY (short_uri),
+    UNIQUE KEY uk_link_id (link_id),
+    KEY idx_gid (gid)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+COMMENT='短码路由索引';
 
 -- ============================================================
 -- 二、分片表 — ds_1 库（结构与 ds_0 完全一致）
@@ -279,4 +298,4 @@ INSERT INTO t_group (gid, name, description, sort_order, create_user_id) VALUES
 
 -- 管理员账号（用户名: admin，密码: admin123，BCrypt加密）
 INSERT INTO t_user (username, password, real_name, role) VALUES
-('admin', '$2a$10$N.zmdr9k7uOCQb376NoUnuTJ8iAt6Z5EHsM8lE9lBOsl7iAt6Z5Eh', '系统管理员', 'ADMIN');
+('admin', '$2a$10$5Q8QtBHeHhnU//3MpfCEOu51wjChUrgxJFv8D3Y.eMz7cZANm8tOO', '系统管理员', 'ADMIN');

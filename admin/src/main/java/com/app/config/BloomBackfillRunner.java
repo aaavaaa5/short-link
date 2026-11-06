@@ -1,8 +1,8 @@
 package com.app.config;
 
 import com.app.common.bloom.BloomFilterHelper;
-import com.app.entity.LinkEntity;
-import com.app.mapper.LinkMapper;
+import com.app.entity.LinkRouteEntity;
+import com.app.mapper.LinkRouteMapper;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -33,7 +33,7 @@ public class BloomBackfillRunner implements ApplicationRunner {
     private static final String BACKFILL_FLAG = "shortlink:bf:backfilled";
 
     @Autowired
-    private LinkMapper linkMapper;
+    private LinkRouteMapper linkRouteMapper;
 
     @Autowired
     private BloomFilterHelper bloomFilterHelper;
@@ -49,11 +49,11 @@ public class BloomBackfillRunner implements ApplicationRunner {
         }
 
         try {
-            List<LinkEntity> links = linkMapper.selectList(Wrappers.lambdaQuery());
+            List<LinkRouteEntity> routes = linkRouteMapper.selectList(Wrappers.lambdaQuery());
             int count = 0;
-            for (LinkEntity link : links) {
-                if (link.getShortUri() != null) {
-                    bloomFilterHelper.add(link.getShortUri());
+            for (LinkRouteEntity route : routes) {
+                if (route.getShortUri() != null) {
+                    bloomFilterHelper.add(route.getShortUri());
                     count++;
                 }
             }

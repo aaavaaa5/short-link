@@ -2,9 +2,12 @@ package com.app.scheduled;
 
 import com.app.entity.AccessStatsEntity;
 import com.app.entity.LinkEntity;
+import com.app.entity.LinkRouteEntity;
 import com.app.mapper.AccessStatsMapper;
 import com.app.mapper.LinkMapper;
+import com.app.mapper.LinkRouteMapper;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import org.redisson.api.RLock;
 import org.redisson.api.RedissonClient;
@@ -45,6 +48,9 @@ public class StatsAggregationTask {
     private LinkMapper linkMapper;
 
     @Autowired
+    private LinkRouteMapper linkRouteMapper;
+
+    @Autowired
     private AccessStatsMapper accessStatsMapper;
 
     @Autowired
@@ -82,18 +88,23 @@ public class StatsAggregationTask {
         LocalDate yesterday = LocalDate.now().minusDays(1);
         log.info("开始聚合 {} 的访问统计数据...", yesterday);
 
-        // 查询所有未删除的短链接
-        LambdaQueryWrapper<LinkEntity> wrapper = Wrappers.lambdaQuery();
-        wrapper.isNotNull(LinkEntity::getId);
-        List<LinkEntity> links = linkMapper.selectList(wrapper);
+        // 通过单表路由索引拿到 gid + linkId，再逐个按分片键精确查询
+        List<LinkRouteEntity> routes = linkRouteMapper.selectList(Wrappers.lambdaQuery());
 
         int count = 0;
-        for (LinkEntity link : links) {
+        for (LinkRouteEntity route : routes) {
             try {
+                LambdaQueryWrapper<LinkEntity> wrapper = Wrappers.lambdaQuery();
+                wrapper.eq(LinkEntity::getGid, route.getGid());
+                wrapper.eq(LinkEntity::getId, route.getLinkId());
+                LinkEntity link = linkMapper.selectOne(wrapper);
+                if (link == null) {
+                    continue;
+                }
                 aggregateLink(link, yesterday);
                 count++;
             } catch (Exception e) {
-                log.error("聚合短链接 {} 统计失败", link.getId(), e);
+                log.error("聚合短链接 {} 统计失败", route.getLinkId(), e);
             }
         }
 
@@ -113,6 +124,7 @@ public class StatsAggregationTask {
         // 2. 写入 t_access_stats（存在则更新）
         LambdaQueryWrapper<AccessStatsEntity> wrapper = Wrappers.lambdaQuery();
         wrapper.eq(AccessStatsEntity::getLinkId, link.getId());
+        wrapper.eq(AccessStatsEntity::getLinkGid, link.getGid());
         wrapper.eq(AccessStatsEntity::getStatsDate, date);
         AccessStatsEntity stats = accessStatsMapper.selectOne(wrapper);
 
@@ -136,14 +148,20 @@ public class StatsAggregationTask {
             stats.setUv(yesterdayUv);
             stats.setIpCount(yesterdayIp);
             stats.setUpdateTime(LocalDateTime.now());
-            accessStatsMapper.updateById(stats);
+            LambdaUpdateWrapper<AccessStatsEntity> updateWrapper = Wrappers.lambdaUpdate();
+            updateWrapper.eq(AccessStatsEntity::getLinkGid, link.getGid());
+            updateWrapper.eq(AccessStatsEntity::getId, stats.getId());
+            accessStatsMapper.update(stats, updateWrapper);
         }
 
         // 3. 更新 t_link 累计数据（按增量累加：重复执行同一天时增量为 0，保证幂等）
         link.setTotalPv((link.getTotalPv() != null ? link.getTotalPv() : 0L) + (yesterdayPv - previousPv));
         link.setTotalUv((link.getTotalUv() != null ? link.getTotalUv() : 0L) + (yesterdayUv - previousUv));
         link.setTotalIpCount((link.getTotalIpCount() != null ? link.getTotalIpCount() : 0L) + (yesterdayIp - previousIp));
-        linkMapper.updateById(link);
+        LambdaUpdateWrapper<LinkEntity> linkUpdate = Wrappers.lambdaUpdate();
+        linkUpdate.eq(LinkEntity::getGid, link.getGid());
+        linkUpdate.eq(LinkEntity::getId, link.getId());
+        linkMapper.update(link, linkUpdate);
     }
 
     private long getRedisLong(String key) {

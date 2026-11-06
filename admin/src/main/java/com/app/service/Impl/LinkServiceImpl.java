@@ -9,18 +9,20 @@ import com.app.dto.req.LinkPageReqDTO;
 import com.app.dto.req.LinkUpdateReqDTO;
 import com.app.dto.resp.LinkVO;
 import com.app.entity.LinkEntity;
+import com.app.entity.LinkRouteEntity;
 import com.app.entity.Result;
+import com.app.mapper.LinkRouteMapper;
 import com.app.mapper.LinkMapper;
 import com.app.service.LinkService;
 import com.app.util.ShortLinkGenerator;
 import com.app.util.UserContext;
+import com.baomidou.mybatisplus.core.incrementer.IdentifierGenerator;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
-import org.redisson.api.RLock;
-import org.redisson.api.RedissonClient;
+import org.springframework.dao.DuplicateKeyException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -29,12 +31,12 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDate;
-import java.util.concurrent.TimeUnit;
+import java.time.LocalDateTime;
 
 /**
  * 短链接服务实现
  * <p>
- * 创建短链接：原始 URL → 生成短码 → 校验唯一性 → 入库。
+ * 创建短链接：生成分布式 ID → 路由表占位短码 → 分片主表入库。
  * 分页查询：支持 gid / shortUri / originUrl / title / enableStatus 多条件组合筛选。
  */
 @Service
@@ -46,10 +48,13 @@ public class LinkServiceImpl implements LinkService {
     private LinkMapper linkMapper;
 
     @Autowired
+    private LinkRouteMapper linkRouteMapper;
+
+    @Autowired
     private ShortLinkGenerator shortLinkGenerator;
 
     @Autowired
-    private RedissonClient redissonClient;
+    private IdentifierGenerator identifierGenerator;
 
     @Autowired
     private StringRedisTemplate redisTemplate;
@@ -62,7 +67,6 @@ public class LinkServiceImpl implements LinkService {
     private String domain;
 
     private static final int MAX_RETRY = 3;
-    private static final String LOCK_PREFIX = "shortlink:lock:create:";
     private static final String CLICK_KEY_PATTERN = "shortlink:click:%d:%s:%s";
 
     // ==================== 创建 ====================
@@ -82,34 +86,36 @@ public class LinkServiceImpl implements LinkService {
         entity.setCreateUserId(UserContext.getUserId());
         entity.setEnableStatus(1);
 
-        // 2. 生成短码：查重与插入必须放在同一把锁的临界区内，
-        //    否则两个并发请求可能都通过查重、再先后插入同一个短码
+        // 2. 路由表主键原子占位，替代跨 16 张分片表的重复检查
         boolean inserted = false;
         for (int i = 0; i < MAX_RETRY && !inserted; i++) {
             String candidate = shortLinkGenerator.generate(req.getOriginUrl());
-            RLock lock = redissonClient.getLock(LOCK_PREFIX + candidate);
+            entity.setId(identifierGenerator.nextId(entity).longValue());
+
+            LinkRouteEntity route = new LinkRouteEntity();
+            route.setShortUri(candidate);
+            route.setLinkId(entity.getId());
+            route.setGid(entity.getGid());
+            route.setCreateTime(LocalDateTime.now());
             try {
-                if (!lock.tryLock(1, 5, TimeUnit.SECONDS)) {
-                    continue;
-                }
+                linkRouteMapper.insert(route);
+            } catch (DuplicateKeyException e) {
+                continue;
+            }
+
+            try {
+                entity.setShortUri(candidate);
+                // 先写布隆位图、再入库；任一失败都释放刚占用的短码
+                bloomFilterHelper.add(candidate);
+                linkMapper.insert(entity);
+                inserted = true;
+            } catch (Exception e) {
                 try {
-                    if (shortUriExists(candidate)) {
-                        continue;
-                    }
-                    entity.setShortUri(candidate);
-                    // 先写布隆位图、再入库：
-                    // 位图写失败就中止创建（避免出现"库里存在、过滤器却说没有"的短码，
-                    // 那会让它上线后一直被跳转服务判为不存在）；
-                    // 位图写成功但入库失败，只会留下一个无害的假阳性。
-                    bloomFilterHelper.add(candidate);
-                    linkMapper.insert(entity);
-                    inserted = true;
-                } finally {
-                    lock.unlock();
+                    linkRouteMapper.deleteById(candidate);
+                } catch (Exception cleanupException) {
+                    log.error("释放短码路由失败: shortUri={}", candidate, cleanupException);
                 }
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                return Result.fail("系统繁忙，请重试");
+                throw e;
             }
         }
         if (!inserted) {
@@ -124,7 +130,7 @@ public class LinkServiceImpl implements LinkService {
 
     @Override
     public Result<Void> update(LinkUpdateReqDTO req) {
-        LinkEntity exist = linkMapper.selectById(req.getId());
+        LinkEntity exist = selectCurrentUserLink(req.getId());
         if (exist == null) {
             return Result.fail(Result.NOT_FOUND, "短链接不存在");
         }
@@ -151,6 +157,7 @@ public class LinkServiceImpl implements LinkService {
 
         // 仅更新非 null 字段
         LambdaUpdateWrapper<LinkEntity> wrapper = Wrappers.lambdaUpdate();
+        wrapper.eq(LinkEntity::getGid, currentUserGid());
         wrapper.eq(LinkEntity::getId, req.getId());
         if (req.getOriginUrl() != null) wrapper.set(LinkEntity::getOriginUrl, req.getOriginUrl());
         if (req.getTitle() != null) wrapper.set(LinkEntity::getTitle, req.getTitle());
@@ -185,7 +192,7 @@ public class LinkServiceImpl implements LinkService {
 
     @Override
     public Result<Void> delete(Long id) {
-        LinkEntity exist = linkMapper.selectById(id);
+        LinkEntity exist = selectCurrentUserLink(id);
         if (exist == null) {
             return Result.fail(Result.NOT_FOUND, "短链接不存在");
         }
@@ -193,7 +200,10 @@ public class LinkServiceImpl implements LinkService {
         if (!exist.getCreateUserId().equals(UserContext.getUserId())) {
             return Result.fail(Result.FORBIDDEN, "无权删除该短链接");
         }
-        linkMapper.deleteById(id);
+        LambdaQueryWrapper<LinkEntity> wrapper = Wrappers.lambdaQuery();
+        wrapper.eq(LinkEntity::getGid, currentUserGid());
+        wrapper.eq(LinkEntity::getId, id);
+        linkMapper.delete(wrapper);
         evictCache(exist.getShortUri());
         return Result.success();
     }
@@ -205,7 +215,8 @@ public class LinkServiceImpl implements LinkService {
         LambdaQueryWrapper<LinkEntity> wrapper = Wrappers.lambdaQuery();
         // 用户只能看到自己创建的短链接
         wrapper.eq(LinkEntity::getCreateUserId, UserContext.getUserId());
-        wrapper.eq(StrUtil.isNotBlank(req.getGid()), LinkEntity::getGid, req.getGid());
+        String gid = StrUtil.isNotBlank(req.getGid()) ? req.getGid() : currentUserGid();
+        wrapper.eq(LinkEntity::getGid, gid);
         wrapper.like(StrUtil.isNotBlank(req.getShortUri()), LinkEntity::getShortUri, req.getShortUri());
         wrapper.like(StrUtil.isNotBlank(req.getOriginUrl()), LinkEntity::getOriginUrl, req.getOriginUrl());
         wrapper.like(StrUtil.isNotBlank(req.getTitle()), LinkEntity::getTitle, req.getTitle());
@@ -247,16 +258,21 @@ public class LinkServiceImpl implements LinkService {
 
     @Override
     public LinkVO getById(Long id) {
-        LinkEntity entity = linkMapper.selectById(id);
+        LinkEntity entity = selectCurrentUserLink(id);
         return entity != null ? toVO(entity) : null;
     }
 
     // ==================== 私有方法 ====================
 
-    private boolean shortUriExists(String shortUri) {
+    private LinkEntity selectCurrentUserLink(Long id) {
         LambdaQueryWrapper<LinkEntity> wrapper = Wrappers.lambdaQuery();
-        wrapper.eq(LinkEntity::getShortUri, shortUri);
-        return linkMapper.selectCount(wrapper) > 0;
+        wrapper.eq(LinkEntity::getGid, currentUserGid());
+        wrapper.eq(LinkEntity::getId, id);
+        return linkMapper.selectOne(wrapper);
+    }
+
+    private String currentUserGid() {
+        return "u_" + UserContext.getUserId();
     }
 
     private LinkVO toVO(LinkEntity entity) {

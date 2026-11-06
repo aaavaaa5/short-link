@@ -1,5 +1,7 @@
 package com.app.dto.resp;
 
+import com.fasterxml.jackson.databind.annotation.JsonSerialize;
+import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
 import lombok.Data;
 
 import java.time.LocalDate;
@@ -12,6 +14,7 @@ import java.util.List;
 public class StatsVO {
 
     /** 短链接 ID */
+    @JsonSerialize(using = ToStringSerializer.class)
     private Long linkId;
 
     /** 短码 */

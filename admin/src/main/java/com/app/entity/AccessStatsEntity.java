@@ -14,8 +14,8 @@ import java.time.LocalDateTime;
 @TableName("t_access_stats")
 public class AccessStatsEntity {
 
-    /** 主键 ID，数据库自增 */
-    @TableId(type = IdType.AUTO)
+    /** 主键 ID，分布式 Snowflake ID */
+    @TableId(type = IdType.ASSIGN_ID)
     private Long id;
 
     /** 短链接 ID，关联 t_link.id */

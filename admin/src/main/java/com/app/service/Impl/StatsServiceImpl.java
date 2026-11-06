@@ -53,7 +53,15 @@ public class StatsServiceImpl implements StatsService {
 
     @Override
     public Result<StatsVO> getLinkStats(Long linkId, String range) {
-        LinkEntity link = linkMapper.selectById(linkId);
+        Long userId = UserContext.getUserId();
+        if (userId == null) {
+            return Result.fail(Result.UNAUTHORIZED, "未登录");
+        }
+        String gid = currentUserGid();
+        LambdaQueryWrapper<LinkEntity> linkWrapper = Wrappers.lambdaQuery();
+        linkWrapper.eq(LinkEntity::getGid, gid);
+        linkWrapper.eq(LinkEntity::getId, linkId);
+        LinkEntity link = linkMapper.selectOne(linkWrapper);
         if (link == null) {
             return Result.fail(Result.NOT_FOUND, "短链接不存在");
         }
@@ -82,10 +90,9 @@ public class StatsServiceImpl implements StatsService {
 
         // 每日明细 → t_access_stats
         int days = range.equals("7d") ? 7 : range.equals("30d") ? 30 : 1;
-        vo.setDailyStats(queryDailyStats(linkId, days));
+        vo.setDailyStats(queryDailyStats(linkId, gid, days));
 
         // 地区/浏览器分布 → t_access_log（带 link_gid 精准路由到单个分片）
-        String gid = link.getGid();
         vo.setCountries(toNameCounts(accessLogMapper.countByCountry(linkId, gid)));
         vo.setProvinces(toNameCounts(accessLogMapper.countByProvince(linkId, gid)));
         vo.setCities(toNameCounts(accessLogMapper.countByCity(linkId, gid)));
@@ -108,6 +115,7 @@ public class StatsServiceImpl implements StatsService {
         // 查询当前用户的所有短链接
         LambdaQueryWrapper<LinkEntity> wrapper = Wrappers.lambdaQuery();
         wrapper.eq(LinkEntity::getCreateUserId, userId);
+        wrapper.eq(LinkEntity::getGid, currentUserGid());
         List<LinkEntity> links = linkMapper.selectList(wrapper);
 
         long totalPv = 0, totalUv = 0, totalIpCount = 0;
@@ -151,6 +159,7 @@ public class StatsServiceImpl implements StatsService {
         // 1. 直接按创建者查询当前用户的所有短链接
         LambdaQueryWrapper<LinkEntity> linkWrapper = Wrappers.lambdaQuery();
         linkWrapper.eq(LinkEntity::getCreateUserId, userId);
+        linkWrapper.eq(LinkEntity::getGid, currentUserGid());
         List<LinkEntity> links = linkMapper.selectList(linkWrapper);
 
         // 2. 没有链接则返回空
@@ -178,6 +187,7 @@ public class StatsServiceImpl implements StatsService {
         // 3. 查询每日统计（DB 聚合表，只到昨天为止）
         LambdaQueryWrapper<AccessStatsEntity> statsWrapper = Wrappers.lambdaQuery();
         statsWrapper.in(AccessStatsEntity::getLinkId, linkIds);
+        statsWrapper.eq(AccessStatsEntity::getLinkGid, currentUserGid());
         statsWrapper.between(AccessStatsEntity::getStatsDate, startDate, endDate);
         List<AccessStatsEntity> statsList = accessStatsMapper.selectList(statsWrapper);
 
@@ -271,6 +281,7 @@ public class StatsServiceImpl implements StatsService {
         // 1. 获取当前用户的所有短链接 ID
         LambdaQueryWrapper<LinkEntity> linkWrapper = Wrappers.lambdaQuery();
         linkWrapper.eq(LinkEntity::getCreateUserId, userId);
+        linkWrapper.eq(LinkEntity::getGid, currentUserGid());
         List<LinkEntity> links = linkMapper.selectList(linkWrapper);
 
         if (links.isEmpty()) {
@@ -293,6 +304,10 @@ public class StatsServiceImpl implements StatsService {
     }
 
     // ==================== 私有方法 ====================
+
+    private String currentUserGid() {
+        return "u_" + UserContext.getUserId();
+    }
 
     /** 从 Redis 读取 String 类型计数器 */
     private long getRedisLong(String key) {
@@ -319,7 +334,7 @@ public class StatsServiceImpl implements StatsService {
      * 为什么需要 Redis 兜底？开发调试时项目不是 7×24 运行，
      * 凌晨 01:00 聚合任务可能没执行，但 Redis 里还保留着最近 3 天的数据。
      */
-    private List<DailyStat> queryDailyStats(Long linkId, int days) {
+    private List<DailyStat> queryDailyStats(Long linkId, String linkGid, int days) {
         LocalDate endDate = LocalDate.now();
         LocalDate startDate = endDate.minusDays(days - 1);  // 今天往前 (days-1) 天 = 共 days 天
         LocalDate today = LocalDate.now();
@@ -335,6 +350,7 @@ public class StatsServiceImpl implements StatsService {
         // 2. 从 DB 查询已有聚合数据
         LambdaQueryWrapper<AccessStatsEntity> wrapper = Wrappers.lambdaQuery();
         wrapper.eq(AccessStatsEntity::getLinkId, linkId);
+        wrapper.eq(AccessStatsEntity::getLinkGid, linkGid);
         wrapper.between(AccessStatsEntity::getStatsDate, startDate, endDate);
         wrapper.orderByAsc(AccessStatsEntity::getStatsDate);
 

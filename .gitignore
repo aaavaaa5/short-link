@@ -48,3 +48,7 @@ FUNCTION_MODULE_DESIGN.md
 
 ### 本地开发工具（构建产物，不参与版本控制）###
 devenv-dashboard.exe
+
+### Runtime logs and local verification artifacts ###
+logs/
+*.log

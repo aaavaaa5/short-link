@@ -1,8 +1,11 @@
 package com.app.config;
 
 import com.baomidou.mybatisplus.annotation.DbType;
+import com.baomidou.mybatisplus.core.incrementer.DefaultIdentifierGenerator;
+import com.baomidou.mybatisplus.core.incrementer.IdentifierGenerator;
 import com.baomidou.mybatisplus.extension.plugins.MybatisPlusInterceptor;
 import com.baomidou.mybatisplus.extension.plugins.inner.PaginationInnerInterceptor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
@@ -21,5 +24,15 @@ public class MybatisPlusConfig {
         MybatisPlusInterceptor interceptor = new MybatisPlusInterceptor();
         interceptor.addInnerInterceptor(new PaginationInnerInterceptor(DbType.MYSQL));
         return interceptor;
+    }
+
+    @Bean
+    public IdentifierGenerator identifierGenerator(
+            @Value("${shortlink.snowflake.worker-id:1}") long workerId,
+            @Value("${shortlink.snowflake.datacenter-id:1}") long datacenterId) {
+        if (workerId < 0 || workerId > 31 || datacenterId < 0 || datacenterId > 31) {
+            throw new IllegalArgumentException("Snowflake workerId/datacenterId 必须在 0~31 之间");
+        }
+        return new DefaultIdentifierGenerator(workerId, datacenterId);
     }
 }

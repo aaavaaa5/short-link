@@ -6,6 +6,7 @@ import org.apache.shardingsphere.infra.config.algorithm.AlgorithmConfiguration;
 import org.apache.shardingsphere.sharding.api.config.ShardingRuleConfiguration;
 import org.apache.shardingsphere.sharding.api.config.rule.ShardingTableRuleConfiguration;
 import org.apache.shardingsphere.sharding.api.config.strategy.sharding.StandardShardingStrategyConfiguration;
+import org.apache.shardingsphere.single.api.config.SingleRuleConfiguration;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -13,6 +14,7 @@ import org.springframework.context.annotation.Primary;
 
 import javax.sql.DataSource;
 import java.sql.SQLException;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Properties;
@@ -97,8 +99,9 @@ public class ShardingSphereConfig {
         Properties props = new Properties();
         props.setProperty("sql-show", "true");
 
+        SingleRuleConfiguration singleRule = new SingleRuleConfiguration("ds0");
         return ShardingSphereDataSourceFactory.createDataSource(dataSourceMap,
-                java.util.Collections.singleton(shardingRule), props);
+                Arrays.asList(shardingRule, singleRule), props);
     }
 
     private HikariDataSource createHikari(String url, String username, String password) {

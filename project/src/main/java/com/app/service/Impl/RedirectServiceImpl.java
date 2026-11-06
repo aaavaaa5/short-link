@@ -2,6 +2,8 @@ package com.app.service.Impl;
 
 import cn.hutool.core.util.StrUtil;
 import com.app.entity.LinkEntity;
+import com.app.entity.LinkRouteEntity;
+import com.app.mapper.LinkRouteMapper;
 import com.app.mapper.LinkMapper;
 import com.app.mq.AccessEventProducer;
 import com.app.service.CacheService;
@@ -27,6 +29,9 @@ public class RedirectServiceImpl implements RedirectService {
 
     @Autowired
     private LinkMapper linkMapper;
+
+    @Autowired
+    private LinkRouteMapper linkRouteMapper;
 
     @Autowired
     private CacheService cacheService;
@@ -128,15 +133,19 @@ public class RedirectServiceImpl implements RedirectService {
     // ==================== 私有方法 ====================
 
     private LinkEntity queryFromDb(String shortUri) {
+        LinkRouteEntity route = linkRouteMapper.selectById(shortUri);
+        if (route == null) {
+            return null;
+        }
+
         LambdaQueryWrapper<LinkEntity> wrapper = Wrappers.lambdaQuery();
-        wrapper.eq(LinkEntity::getShortUri, shortUri);
-        // ShardingSphere 按 shortUri 查询无分片键 gid，会广播到所有分片
-        // selectList 比 selectOne 在广播场景下更稳定（避免多结果异常）
+        wrapper.eq(LinkEntity::getGid, route.getGid());
+        wrapper.eq(LinkEntity::getId, route.getLinkId());
         try {
             List<LinkEntity> results = linkMapper.selectList(wrapper);
             if (results != null && !results.isEmpty()) {
                 if (results.size() > 1) {
-                    log.warn("shortUri={} 在多个分片中查到 {} 条记录，取第一条", shortUri, results.size());
+                    log.warn("shortUri={} 的路由命中了 {} 条记录，取第一条", shortUri, results.size());
                 }
                 return results.get(0);
             }

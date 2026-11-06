@@ -87,3 +87,14 @@ shortlink:
     expire-hours: 24
     # 签名密钥（至少 256 位，生产环境必须修改）
     secret: shortlink-admin-secret-key-min-256-bits!!
+  # Redis Stream 访问事件消费者
+  access-event:
+    # 留空时自动生成: 应用名-主机名-PID-随机后缀
+    consumer-name:
+    # 访问时间入库时使用的固定时区
+    zone-id: Asia/Shanghai
+  # 分片表分布式 ID
+  snowflake:
+    # 多实例部署时必须为每个实例配置不同的 worker-id
+    worker-id: ${SHORTLINK_WORKER_ID:1}
+    datacenter-id: ${SHORTLINK_DATACENTER_ID:1}
