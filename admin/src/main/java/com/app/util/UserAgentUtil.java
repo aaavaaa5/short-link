@@ -29,7 +29,8 @@ public class UserAgentUtil {
     private static final Pattern MAC = Pattern.compile("Mac OS X (\\d+[_\\d]*)", Pattern.CASE_INSENSITIVE);
     private static final Pattern LINUX = Pattern.compile("Linux", Pattern.CASE_INSENSITIVE);
     private static final Pattern ANDROID = Pattern.compile("Android (\\d+\\.?\\d*)", Pattern.CASE_INSENSITIVE);
-    private static final Pattern IOS = Pattern.compile("iPhone OS (\\d+[_\\d]*)", Pattern.CASE_INSENSITIVE);
+    private static final Pattern IOS = Pattern.compile(
+            "(?:iPhone OS|CPU OS) (\\d+[_\\d]*)", Pattern.CASE_INSENSITIVE);
 
     // ==================== 设备正则 ====================
 
